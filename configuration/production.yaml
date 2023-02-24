@@ -1,0 +1,5 @@
+bot:
+  private_key: ""
+  mempool_space_url: ""
+database:
+  require_ssl: true

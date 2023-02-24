@@ -1,0 +1,10 @@
+bot:
+  private_key: ""
+  mempool_space_url: "http://0.0.0.0"
+database:
+  host: "127.0.0.1"
+  port: 15429
+  username: "postgres"
+  password: "password"
+  database_name: "nostrmempoolalerts"
+  require_ssl: false
