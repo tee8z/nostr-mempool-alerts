@@ -1,3 +1,5 @@
+use nostr_sdk::{client, prelude::Metadata};
+
 
 
 async fn post_nostr() {
