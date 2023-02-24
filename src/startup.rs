@@ -1,3 +1,5 @@
+use sqlx::PgPool;
+
 
 
 pub struct Bot {
