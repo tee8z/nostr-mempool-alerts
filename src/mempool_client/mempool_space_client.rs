@@ -8,14 +8,16 @@
  * 4) a given block height has been reached
  */
 
+use sqlx::PgPool;
+
  pub struct MempoolClient {
     mempool_space: String,
     db_pool: PgPool
 }
 
 impl MempoolClient {
-    pub async fn build(self, configuration: Settings, db: PgPool) -> MempoolClient {
-        Ok((self))
+    pub async fn build(mempool_url: &str, db: PgPool) -> MempoolClient {
+        Self{mempool_space: mempool_url.to_owned(), db_pool: db}
     }
 
     pub async fn utxo_movements(){

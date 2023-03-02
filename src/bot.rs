@@ -4,19 +4,30 @@ TODO: here we need to handle the business logic of marshalling mempool data/mess
 
  */
 
+use std::future::{Ready, IntoFuture, ready};
+
 use sqlx::PgPool;
+use tokio::sync::mpsc;
+
+use crate::{nostr_client::NostrClient, mempool_client::MempoolClient};
 //mpsc::channel()
-struct Bot {
-    db: PgPool,
+pub struct Bot {
+    pub db_pool: PgPool,
     pub mempool_client: MempoolClient,
     pub nostr_client: NostrClient
 }
 
-impl Bot {
-    pub async fn run() {
-        let (tx, rx) = mpsc::channel();
-    // create the threads here, 1 for mempool, 1 for nostr
-    // need to communicate between the two, or communicate one way and poll the DB for new alerts? 
+struct Message {
+    val: String
+}
 
+impl IntoFuture for Bot {
+    type Output = Result<(), std::io::Error>;
+    type IntoFuture = Ready<Self::Output>;
+
+    fn into_future(self) -> Self::IntoFuture {
+         let (tx,mut rx) = mpsc::channel::<Message>(0);
+         //implement the bot loop
+        ready(Ok(()))
     }
 }

@@ -1,15 +1,6 @@
-use actix_web::web::Data;
-use std::{
-    future::Future,
-    io, mem,
-    pin::Pin,
-    task::{Context, Poll},
-    thread,
-    time::Duration,
-};
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use futures_core::{future::BoxFuture, Stream};
-use crate::{configuration::{DatabaseSettings, Settings}, nostr_client::NostrClient};
+use crate::{configuration::{DatabaseSettings, Settings, NostrSettings}, nostr_client::NostrClient, mempool_client::MempoolClient};
+use crate::{bot::Bot};
 
 pub struct Application {
     bot: Bot,
@@ -20,13 +11,13 @@ impl Application {
         let connection_pool = get_connection_pool(&configuration.database);
         let bot = build_bot(
             connection_pool,
-            configuration.bot.mempool_space_url,
-            configuration.bot.nostr_relays
+            &configuration.bot.mempool_url,
+            configuration.bot.nostr_settings
         ).await?;
         Ok(Self { bot })
     } 
     pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
-        self.bot.run().await
+        self.bot.await
     }
 }
 
@@ -40,12 +31,15 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
 pub async fn build_bot(
     db_pool: PgPool,
     mempool_url: &str,
-    nostr_relays: [&str]
+    nostr_configuration: NostrSettings
 ) -> Result<Bot, anyhow::Error>{
-    let db_pool = Data::new(db_pool);
-    let mempool_client = MempoolClient::build(self, configuration, db);
-    let nostr_client = NostrClient::build(self, configuration, db);
+    //TODO: add trace around DB queries
+
+    let mempool_client = MempoolClient::build(mempool_url, db_pool.clone()).await;
+    let nostr_client = NostrClient::build(nostr_configuration, db_pool.clone()).await?;
+    
     let bot = Bot {
+        db_pool: db_pool.clone(),
         mempool_client: mempool_client,
         nostr_client: nostr_client
     };    

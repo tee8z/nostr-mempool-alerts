@@ -13,7 +13,14 @@ pub struct Settings {
 #[derive(Clone, serde::Deserialize)]
 pub struct BotSettings {
     pub mempool_url: String,
-    pub nostr_relays: [String],
+    pub private_key: Secret<String>,
+    pub nostr_settings: NostrSettings,
+}
+
+#[derive(Clone, serde::Deserialize)]
+pub struct NostrSettings {
+    pub private_key: Secret<String>,
+    pub nostr_relays: Vec<String>,
 }
 
 #[derive(Clone, serde::Deserialize)]
@@ -48,7 +55,7 @@ impl DatabaseSettings {
     }
 }
 
-pub fn get_configuration() -> Result<Settings, config::ConfigError> {
+pub fn get_configuration() -> Result<Settings, config::ConfigError>  {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory.");
     let configuration_directory = base_path.join("configuration");
     let environment: Environment = std::env::var("APP_ENVIRONMENT")
