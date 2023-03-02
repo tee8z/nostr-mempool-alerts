@@ -7,15 +7,13 @@ use std::convert::{TryFrom, TryInto};
 #[derive(Clone, serde::Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
-    pub application: ApplicationSettings,
+    pub bot: BotSettings,
 }
 
 #[derive(Clone, serde::Deserialize)]
-pub struct ApplicationSettings {
-    #[serde(deserialize_with = "deserialize_number_from_string")]
-    pub port: u16,
-    pub host: String,
-    pub base_url: String,
+pub struct BotSettings {
+    pub mempool_url: String,
+    pub nostr_relays: [String],
 }
 
 #[derive(Clone, serde::Deserialize)]

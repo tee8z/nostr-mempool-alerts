@@ -13,11 +13,24 @@
     db_pool: PgPool
 }
 
-
 impl MempoolClient {
-    pub async fn build(self, configuration: Settings, db: PgPool) -> Result<Self, anyhow::Error> {
+    pub async fn build(self, configuration: Settings, db: PgPool) -> MempoolClient {
         Ok((self))
     }
 
-    pub async fn utxoMovement(client_id: )
+    pub async fn utxo_movements(){
+
+    }
+
+    pub async fn transaction_height(){
+
+    }
+
+    pub async fn mempool_fee(){
+
+    }
+
+    pub async fn block_height(){
+
+    }
 }

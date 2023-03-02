@@ -12,15 +12,21 @@ use futures_core::{future::BoxFuture, Stream};
 use crate::{configuration::{DatabaseSettings, Settings}, nostr_client::NostrClient};
 
 pub struct Application {
-    mempool_space_url: String,
+    bot: Bot,
 }
 
 impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
-       Ok( Self { mempool_space_url: "".to_owned() }) 
+        let connection_pool = get_connection_pool(&configuration.database);
+        let bot = build_bot(
+            connection_pool,
+            configuration.bot.mempool_space_url,
+            configuration.bot.nostr_relays
+        ).await?;
+        Ok(Self { bot })
     } 
     pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
-        self.bot.await
+        self.bot.run().await
     }
 }
 
@@ -31,12 +37,17 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
 }
 
 //Want to create a single bot that runs mempoolspace and nostr_client in different threads
-//the process may need to run in worker pools?
-pub async fn run(
+pub async fn build_bot(
     db_pool: PgPool,
+    mempool_url: &str,
+    nostr_relays: [&str]
 ) -> Result<Bot, anyhow::Error>{
     let db_pool = Data::new(db_pool);
-    //let bot = Bot { mempool_space_url: ("").to_owned() };
-    
+    let mempool_client = MempoolClient::build(self, configuration, db);
+    let nostr_client = NostrClient::build(self, configuration, db);
+    let bot = Bot {
+        mempool_client: mempool_client,
+        nostr_client: nostr_client
+    };    
     Ok(bot)
 }

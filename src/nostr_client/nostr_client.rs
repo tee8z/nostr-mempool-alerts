@@ -28,7 +28,7 @@ impl NostrClient {
         let metadata = Metadata::new()
         .name("block bot")
         .display_name("block bot")
-        .about("a block notification bot that will publish a notification to a user when a block target has been hit or a block number has been reached")
+        .about("a block notification bot that will publish a notification to a user when a block target has been hit or a block number has been reached");
             //.nip05()
             //.lud16()
         
@@ -40,6 +40,7 @@ impl NostrClient {
         /*
          TODO: 
             * there will be multiple types of alert messages, that logic will probably needed to be handled here
+            * maybe we use the strategy pattern here for posting the different types?
          */
     }
 
@@ -48,7 +49,7 @@ impl NostrClient {
         while let Ok(notifcation) = notifcations.recv().await {
             println!("{notifcation:?}");
             /*TODO:
-                * Add to the DB the user's alert request, use their nip05 or pubkey to assoicate
+                * Add to the DB the user's alert request, use their pubkey to assoicate the alert
                 * Send a response back to the user who requested the alert to confirm it was recieved
             */ 
         }
