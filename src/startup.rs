@@ -9,17 +9,10 @@ use std::{
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use futures_core::{future::BoxFuture, Stream};
-use crate::configuration::{DatabaseSettings, Settings};
-
-pub struct Bot {
-    mempool_space: String,
-    fut: BoxFuture<'static, io::Result<()>>,
-}
-
+use crate::{configuration::{DatabaseSettings, Settings}, nostr_client::NostrClient};
 
 pub struct Application {
     mempool_space_url: String,
-    bot: Bot,
 }
 
 impl Application {
@@ -37,13 +30,13 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
         .connect_lazy_with(configuration.with_db())
 }
 
-//Want to create a single bot that runs mempoolspace and nostr_client in differen threads
+//Want to create a single bot that runs mempoolspace and nostr_client in different threads
 //the process may need to run in worker pools?
 pub async fn run(
     db_pool: PgPool,
 ) -> Result<Bot, anyhow::Error>{
     let db_pool = Data::new(db_pool);
-    let bot = Bot { mempool_space_url: ("").to_owned() };
+    //let bot = Bot { mempool_space_url: ("").to_owned() };
     
     Ok(bot)
 }

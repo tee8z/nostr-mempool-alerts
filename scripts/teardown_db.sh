@@ -20,7 +20,7 @@ fi
 DB_USER=${POSTGRES_USER:=postgres}
 DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
 DB_NAME="${POSTGRES_DB=nostrmempoolalerts}"
-DB_PORT="${POSTGRES_PORT=15420}"
+DB_PORT="${POSTGRES_PORT=15415}"
 
 export PGPASSWORD="${DB_PASSWORD}"
 until psql -h "localhost" -U "${DB_USER}" -p "${DB_PORT}" -d "postgres" -c '\q'; do

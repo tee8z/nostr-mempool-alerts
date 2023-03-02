@@ -20,12 +20,12 @@ fi
 DB_USER=${POSTGRES_USER:=postgres}
 DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
 DB_NAME="${POSTGRES_DB=nostrmempoolalerts}"
-DB_PORT="${POSTGRES_PORT=15420}"
+DB_PORT="${POSTGRES_PORT=15415}"
 
 if [[ -z "${SKIP_DOCKER}" ]]
 then 
     docker run \
-        --name nostr_vault_db \
+        --name nostr_mempool_alerts_db \
         -e POSTGRES_USER=${DB_USER} \
         -e POSTGRES_PASSWORD=${DB_PASSWORD} \
         -e POSTGRES_DB=${DB_NAME} \
