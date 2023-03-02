@@ -1,0 +1,4 @@
+bot:
+  private_key: ""
+database:
+  require_ssl: false
