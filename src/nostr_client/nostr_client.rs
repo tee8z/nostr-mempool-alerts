@@ -1,7 +1,24 @@
-use crate::configuration::NostrSettings;
+use crate::bot::Message;
+use crate::{configuration::NostrSettings, error_fmt::error_chain_fmt};
 use nostr_sdk::prelude::*;
-use secrecy::{Secret, ExposeSecret};
+use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
+use std::fmt::Debug;
+use std::str::FromStr;
+
+#[derive(thiserror::Error)]
+pub enum NostrError {
+    #[error("Failed to send request")]
+    FailedToSend,
+    #[error("Failed to validate pubkey")]
+    FailedPubkeyValidation
+}
+
+impl Debug for NostrError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
 
 
 pub struct NostrClient {
@@ -9,7 +26,7 @@ pub struct NostrClient {
     public_key: String,
     client: Client,
     listen_relays: Vec<String>,
-    db_pool: PgPool
+    db_pool: PgPool,
 }
 
 impl NostrClient {
@@ -28,8 +45,8 @@ impl NostrClient {
         .name("block bot")
         .display_name("block bot")
         .about("a block notification bot that will publish a notification to a user when a block target has been hit or a block number has been reached");
-            //.nip05()
-            //.lud16()
+        //.nip05()
+        //.lud16()
         client.set_metadata(metadata).await?;
         Ok(Self {
             private_key: private_key,
@@ -39,39 +56,32 @@ impl NostrClient {
             db_pool: db,
         })
     }
-    /*
-        for listen in self.listen_relays.iter() {
-            self.client.add_relay(listen, None).await?;
-        }
 
-        self.client.connect().await;
-        let metadata = Metadata::new()
-        .name("block bot")
-        .display_name("block bot")
-        .about("a block notification bot that will publish a notification to a user when a block target has been hit or a block number has been reached");
-            //.nip05()
-            //.lud16()
-        
-        self.client.set_metadata(metadata).await?;
-        Ok((self))
-    }   */
+    pub async fn direct_message_nostr(
+        self,
+        client_pk: &str,
+        msg: Message,
+    ) -> Result<(), NostrError> {
 
-    pub async fn post_nostr(self, relay_name: String) {
-        /*
-         TODO: 
-            * there will be multiple types of alert messages, that logic will probably needed to be handled here
-            * maybe we use the strategy pattern here for posting the different types?
-         */
+        let pubkey = XOnlyPublicKey::from_str(client_pk.into())
+            .map_err(|_| NostrError::FailedPubkeyValidation)?;
+
+        self.client
+            .send_direct_msg(pubkey, msg.val)
+            .await
+            .map_err(|_| NostrError::FailedToSend)
+            .map(|_| ())
     }
 
-    pub async fn listen_messages(self){
+    pub async fn listen_messages(self) {
         let mut notifcations = self.client.notifications();
         while let Ok(notifcation) = notifcations.recv().await {
             println!("{notifcation:?}");
+            
             /*TODO:
-                * Add to the DB the user's alert request, use their pubkey to assoicate the alert
-                * Send a response back to the user who requested the alert to confirm it was recieved
-            */ 
+             * Add to the DB the user's alert request, use their pubkey to assoicate the alert
+             * Send a response back to the user who requested the alert to confirm it was recieved
+             */
         }
     }
 }

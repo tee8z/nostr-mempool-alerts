@@ -1,6 +1,6 @@
 
 /*
-TODO: here we need to handle the business logic of marshalling mempool data/messages into alerts that are need by the clients of this bot
+TODO: here we need to handle the business logic of marshalling mempool data/messages into alerts that are needed by the clients of this bot
 
  */
 
@@ -17,8 +17,8 @@ pub struct Bot {
     pub nostr_client: NostrClient
 }
 
-struct Message {
-    val: String
+pub struct Message {
+    pub val: String
 }
 
 impl IntoFuture for Bot {
