@@ -22,7 +22,11 @@ anyhow = "1.0.40"
 serde-aux = "4.1.2"
 secrecy = { version = "0.8", features = ["serde"] }
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version =  "0.18.0", features = ["native-tls"]}
 futures-core = "0.3.26"
+tokio-executor = "0.1.10"
+signal-hook = "0.3.15"
+
 
 [dev-dependencies]
 once_cell = "1.7.2"
