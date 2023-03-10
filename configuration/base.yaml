@@ -1,6 +1,5 @@
-bot:
-  private_key: ""
-  mempool_space_url: "http://0.0.0.0"
+mempool:
+  url: "http://0.0.0.0"
 database:
   host: "127.0.0.1"
   port: 15429
@@ -8,3 +7,8 @@ database:
   password: "password"
   database_name: "nostrmempoolalerts"
   require_ssl: false
+nostr:
+  private_key: ""
+  nostr_relays:
+   - ""
+   - ""

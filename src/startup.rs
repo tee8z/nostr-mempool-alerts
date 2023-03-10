@@ -18,8 +18,8 @@ impl Application {
         let connection_pool = get_connection_pool(&configuration.database);
         let bot = build_bot(
             connection_pool,
-            &configuration.bot.mempool_url,
-            configuration.bot.nostr_settings,
+            &configuration.mempool.url,
+            configuration.nostr,
         )
         .await?;
         Ok(Self { bot })
@@ -43,8 +43,8 @@ pub async fn build_bot(
     nostr_configuration: NostrSettings,
 ) -> Result<Bot, anyhow::Error> {
     // wire up communication between processes
-    let (send_to_nostr, listen_from_nostr) = mpsc::channel::<Message>(0);
-    let (send_to_alert_nostrbot, listen_from_alert) = mpsc::channel::<Message>(0);
+    let (send_to_nostr, listen_from_nostr) = mpsc::channel::<Message>(1);
+    let (send_to_alert_nostrbot, listen_from_alert) = mpsc::channel::<Message>(1);
     let alert_nostr = Channels {
         send: send_to_nostr,
         listen: listen_from_alert
@@ -53,8 +53,8 @@ pub async fn build_bot(
         send: send_to_alert_nostrbot,
         listen: listen_from_nostr
     };
-    let (send_to_membot, listen_from_alert) = mpsc::channel::<Message>(0);
-    let (send_to_alert_membot, listen_from_membot) = mpsc::channel::<Message>(0);
+    let (send_to_membot, listen_from_alert) = mpsc::channel::<Message>(1);
+    let (send_to_alert_membot, listen_from_membot) = mpsc::channel::<Message>(1);
     let mempool_comm = Channels {
         send: send_to_membot,
         listen: listen_from_alert
