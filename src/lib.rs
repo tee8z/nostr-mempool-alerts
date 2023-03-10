@@ -1,6 +1,7 @@
 pub mod configuration;
-pub mod mempool_client;
-pub mod nostr_client;
+pub mod mempool_manager;
+pub mod nostr_manager;
+pub mod alert_manager;
 pub mod startup;
 pub mod telemetry;
 pub mod bot;
