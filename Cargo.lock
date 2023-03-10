@@ -1171,6 +1171,7 @@ dependencies = [
  "anyhow",
  "config",
  "futures-core",
+ "futures-util",
  "lazy_static",
  "nostr-sdk",
  "once_cell",

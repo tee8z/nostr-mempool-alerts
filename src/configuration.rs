@@ -7,14 +7,13 @@ use std::convert::{TryFrom, TryInto};
 #[derive(Clone, serde::Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
-    pub bot: BotSettings,
+    pub mempool: MempoolSettings,
+    pub nostr: NostrSettings
 }
 
 #[derive(Clone, serde::Deserialize)]
-pub struct BotSettings {
-    pub mempool_url: String,
-    pub private_key: Secret<String>,
-    pub nostr_settings: NostrSettings,
+pub struct MempoolSettings {
+    pub url: String,
 }
 
 #[derive(Clone, serde::Deserialize)]

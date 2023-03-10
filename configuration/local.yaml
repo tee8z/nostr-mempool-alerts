@@ -1,4 +1,8 @@
-bot:
-  private_key: ""
+mempool:
+  url: "http://0.0.0.0"
 database:
   require_ssl: false
+nostr:
+  private_key: "nsec1rlpycvsa8xuyuqumsdgcssengqc65j87fnmwpffkv7a2tgj3gc0sltukmh"
+  nostr_relays:
+   - "ws://0.0.0.0:8080"

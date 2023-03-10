@@ -1,5 +1,9 @@
-bot:
-  private_key: ""
-  mempool_space_url: ""
+mempool:
+  url: "http://0.0.0.0"
 database:
   require_ssl: true
+nostr:
+  private_key: ""
+  nostr_relays:
+   - ""
+   - ""

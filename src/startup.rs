@@ -1,12 +1,10 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-
-use crate::bot::Bot;
 use crate::{
-    bot::{Channels, Message},
+    bot::{Bot, Channels, Message},
     configuration::{DatabaseSettings, NostrSettings, Settings},
-    mempool_client::MempoolClient,
-    nostr_client::NostrClient,
+    nostr_manager::NostrManager,
+    mempool_manager::MempoolManager, alert_manager::{AlertManager,AlertCommunication}
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::sync::mpsc;
@@ -20,8 +18,8 @@ impl Application {
         let connection_pool = get_connection_pool(&configuration.database);
         let bot = build_bot(
             connection_pool,
-            &configuration.bot.mempool_url,
-            configuration.bot.nostr_settings,
+            &configuration.mempool.url,
+            configuration.nostr,
         )
         .await?;
         Ok(Self { bot })
@@ -44,25 +42,43 @@ pub async fn build_bot(
     mempool_url: &str,
     nostr_configuration: NostrSettings,
 ) -> Result<Bot, anyhow::Error> {
-    let (send_to_nostr, mut listen_from_nostr) = mpsc::channel::<Message>(0);
-    let nostr_comm = Channels {
+    // wire up communication between processes
+    let (send_to_nostr, listen_from_nostr) = mpsc::channel::<Message>(1);
+    let (send_to_alert_nostrbot, listen_from_alert) = mpsc::channel::<Message>(1);
+    let alert_nostr = Channels {
         send: send_to_nostr,
-        listen: listen_from_nostr,
+        listen: listen_from_alert
     };
-    let (send_to_membot, mut listen_from_membot) = mpsc::channel::<Message>(0);
+    let nostr_comm = Channels {
+        send: send_to_alert_nostrbot,
+        listen: listen_from_nostr
+    };
+    let (send_to_membot, listen_from_alert) = mpsc::channel::<Message>(1);
+    let (send_to_alert_membot, listen_from_membot) = mpsc::channel::<Message>(1);
     let mempool_comm = Channels {
         send: send_to_membot,
-        listen: listen_from_membot,
+        listen: listen_from_alert
     };
-    let mempool_client = MempoolClient::build(mempool_url, db_pool.clone(), nostr_comm).await;
-    let nostr_client =
-        NostrClient::build(nostr_configuration, db_pool.clone(), mempool_comm).await?;
+    let alert_mempool = Channels {
+        send: send_to_alert_membot,
+        listen: listen_from_membot
+    };
+    let alert_coms = AlertCommunication {
+        mempool_com: alert_mempool,
+        nostr_com: alert_nostr
+    };
+    let kill_signal = Arc::new(AtomicBool::new(false));
+    // wire up background processes
+    let mempool_manager = MempoolManager::build(mempool_url, nostr_comm, "mainnet".into(), kill_signal.clone()).await;
+    let nostr_manager = NostrManager::build(nostr_configuration, mempool_comm, kill_signal.clone()).await?;
+    let alert_manger = AlertManager::build(db_pool, alert_coms, kill_signal.clone()).await;
+
     //TODO: add trace around DB queries
     let bot = Bot {
-        db_pool: db_pool.clone(),
-        mempool_client: mempool_client,
-        nostr_client: nostr_client,
-        kill_signal: Arc::new(AtomicBool::new(false))
+        mempool_manager: mempool_manager,
+        nostr_manager: nostr_manager,
+        alert_manager: alert_manger,
+        kill_signal: kill_signal.clone()
     };
     Ok(bot)
 }
