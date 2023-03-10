@@ -1,10 +1,7 @@
 use std::{future::{Ready, IntoFuture, ready}, sync::{atomic::{AtomicBool, Ordering}, Arc}};
-use sqlx::PgPool;
-use tokio::{sync::{mpsc, mpsc::{Sender, Receiver}}, signal::unix::{SignalKind, signal}};
+use tokio::{sync::{mpsc::{Sender, Receiver}}};
 use std::thread;
 use crate::{nostr_manager::NostrManager, mempool_manager::MempoolManager, alert_manager::AlertManager};
-
-
 
 
 /*
@@ -30,14 +27,12 @@ Lifecycle of an alert
  */
 
 
-#[derive(Clone)]
 pub struct Channels {
     pub send: Sender<Message>,
-    pub listen: Arc<Receiver<Message>>,
+    pub listen: Receiver<Message>,
 }
 
 pub struct Bot {
-    pub db_pool: PgPool,
     pub alert_manager: AlertManager,
     pub mempool_manager: MempoolManager,
     pub nostr_manager: NostrManager,
@@ -66,7 +61,7 @@ impl Bot {
         Ok(())
     }
 }
-
+#[derive(Debug)]
 pub struct Message {
     pub val: String
 }

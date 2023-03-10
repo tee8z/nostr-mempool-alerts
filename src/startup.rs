@@ -43,43 +43,42 @@ pub async fn build_bot(
     nostr_configuration: NostrSettings,
 ) -> Result<Bot, anyhow::Error> {
     // wire up communication between processes
-    let (send_to_nostr, mut listen_from_nostr) = mpsc::channel::<Message>(0);
-    let (send_to_alert_nostrbot, mut listen_from_alert) = mpsc::channel::<Message>(0);
+    let (send_to_nostr, listen_from_nostr) = mpsc::channel::<Message>(0);
+    let (send_to_alert_nostrbot, listen_from_alert) = mpsc::channel::<Message>(0);
     let alert_nostr = Channels {
         send: send_to_nostr,
-        listen: listen_from_alert.into()
+        listen: listen_from_alert
     };
     let nostr_comm = Channels {
         send: send_to_alert_nostrbot,
-        listen: listen_from_nostr.into(),
+        listen: listen_from_nostr
     };
-    let (send_to_membot, mut listen_from_alert) = mpsc::channel::<Message>(0);
-    let (send_to_alert_membot, mut listen_from_membot) = mpsc::channel::<Message>(0);
+    let (send_to_membot, listen_from_alert) = mpsc::channel::<Message>(0);
+    let (send_to_alert_membot, listen_from_membot) = mpsc::channel::<Message>(0);
     let mempool_comm = Channels {
         send: send_to_membot,
-        listen: listen_from_alert.into(),
+        listen: listen_from_alert
     };
     let alert_mempool = Channels {
         send: send_to_alert_membot,
-        listen: listen_from_membot.into()
+        listen: listen_from_membot
     };
     let alert_coms = AlertCommunication {
         mempool_com: alert_mempool,
         nostr_com: alert_nostr
     };
-
+    let kill_signal = Arc::new(AtomicBool::new(false));
     // wire up background processes
-    let mempool_manager = MempoolManager::build(mempool_url, db_pool.clone(), nostr_comm.clone(), "mainnet".into()).await;
-    let nostr_manager = NostrManager::build(nostr_configuration, db_pool.clone(), mempool_comm.clone()).await?;
-    let alert_manger = AlertManager::build(db_pool.clone(), alert_coms).await;
+    let mempool_manager = MempoolManager::build(mempool_url, nostr_comm, "mainnet".into(), kill_signal.clone()).await;
+    let nostr_manager = NostrManager::build(nostr_configuration, mempool_comm, kill_signal.clone()).await?;
+    let alert_manger = AlertManager::build(db_pool, alert_coms, kill_signal.clone()).await;
 
     //TODO: add trace around DB queries
     let bot = Bot {
-        db_pool: db_pool.clone(),
         mempool_manager: mempool_manager,
         nostr_manager: nostr_manager,
         alert_manager: alert_manger,
-        kill_signal: Arc::new(AtomicBool::new(false))
+        kill_signal: kill_signal.clone()
     };
     Ok(bot)
 }
