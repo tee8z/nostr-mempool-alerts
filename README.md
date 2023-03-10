@@ -1,6 +1,6 @@
 bot:
-What is should be able to do:
-* someone should be able to post to the bot, ask it to send the notifications to a given relay
+What it should be able to do:
+* someone should be able to post to the bot, ask it to send the notifications to them over the same relay
 * 3 types of notifications:
     * ask to be alerted a given block height has been reached
     * ask to be alerted when mempool fees have reached a given level
@@ -14,4 +14,6 @@ This bot server should be very easy for someone to run (package as a binary), so
 Plan to have a public one people can use
 
 
-* Future plan to add a utxo movement tracking option (this one is trickier as the data to determine is user specific)
+* Future plans:
+   * add a utxo movement tracking option (this one is trickier as the data to determine is user specific)
+   * add ability to send over a nostr relays specified by the user
