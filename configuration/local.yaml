@@ -1,5 +1,5 @@
 mempool:
-  url: "http://0.0.0.0"
+  url: "https://mempool.space"
 database:
   require_ssl: false
 nostr:

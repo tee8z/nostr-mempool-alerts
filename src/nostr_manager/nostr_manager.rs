@@ -2,19 +2,16 @@ use crate::bot::{self, Channels, Message};
 use crate::{configuration::NostrSettings, error_fmt::error_chain_fmt};
 use nostr_sdk::prelude::*;
 use secrecy::{ExposeSecret, Secret};
+use futures_util::{future::join_all, Future};
+use std::io::ErrorKind;
 use std::{
     fmt::Debug,
-    future::{ready, IntoFuture, Ready},
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    thread,
-};
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    Mutex,
+    task::{Context, Poll},
 };
 
 #[derive(thiserror::Error)]
@@ -30,21 +27,20 @@ impl Debug for NostrError {
         error_chain_fmt(self, f)
     }
 }
-
+#[derive(Clone)]
 pub struct NostrManager {
     pub private_key: Secret<String>,
     pub public_key: String,
     client: Client,
     pub listen_relays: Vec<String>,
-    alert_listen: Arc<Mutex<Receiver<bot::Message>>>,
-    alert_send: Sender<bot::Message>,
+    alert_manager: Channels<String>,
     pub kill_signal: Arc<AtomicBool>,
 }
 
 impl NostrManager {
     pub async fn build(
         configuration: NostrSettings,
-        alert_manager: Channels,
+        alert_manager: Channels<String>,
         kill_signal: Arc<AtomicBool>,
     ) -> Result<Self, anyhow::Error> {
         let private_key = Secret::new(configuration.private_key.expose_secret().to_owned());
@@ -69,8 +65,7 @@ impl NostrManager {
             public_key: public_key,
             client: client,
             listen_relays: listen_relays,
-            alert_listen: Arc::new(Mutex::new(alert_manager.listen)),
-            alert_send: alert_manager.send,
+            alert_manager: alert_manager,
             kill_signal: kill_signal,
         })
     }
@@ -78,17 +73,18 @@ impl NostrManager {
     pub async fn get_client_pk(self) -> String {
         "test".to_owned()
     }
-    pub fn run(self) -> Result<(), std::io::Error> {
+    pub async fn run(self) -> Result<(), std::io::Error> {
         let kill_signal = self.kill_signal.clone();
-        let alert_listen = self.alert_listen.clone();
-        let alert_send = self.alert_send.clone();
+        let alert_listen = self.alert_manager.listen.clone();
+        let alert_send = self.alert_manager.send.clone();
         let client = self.client.clone();
         let client_notification = client.clone();
         // let client_pk = self.get_client_pk().await;
         let kill_alert_watcher = kill_signal.clone();
-        tokio::spawn(async move {
+        let mut tasks = vec![];
+        let direct_message_sender = tokio::spawn(async move {
             loop {
-                let message = alert_listen.lock().await.recv().await.unwrap();
+                let message = alert_listen.recv().unwrap();
                 let fake_pk = "testing_pk";
                 direct_message_nostr(client.clone(), fake_pk, message)
                     .await
@@ -98,8 +94,9 @@ impl NostrManager {
                 }
             }
         });
+        tasks.push(direct_message_sender);
         let kill_notification_watcher = kill_signal.clone();
-        tokio::spawn(async move {
+        let notification_listener = tokio::spawn(async move {
             let mut notifcations = client_notification.notifications();
             while let Ok(notifcation) = notifcations.recv().await {
                 println!("{notifcation:?}");
@@ -107,18 +104,15 @@ impl NostrManager {
                     .send(bot::Message {
                         val: format!("{:?}", notifcation),
                     })
-                    .await
                     .unwrap();
                 if kill_notification_watcher.load(Ordering::Relaxed) {
                     return
                 }
             }
         });
-
-        //keep thread alive until kill signal is sent
-        while !kill_signal.load(Ordering::Relaxed) {
-            thread::park();
-        }
+        tasks.push(notification_listener);
+        let nostr_handler = join_all(tasks);
+        nostr_handler.await;
         Ok(())
     }
 }
@@ -126,7 +120,7 @@ impl NostrManager {
 pub async fn direct_message_nostr(
     client: Client,
     client_pk: &str,
-    msg: Message,
+    msg: Message<String>,
 ) -> Result<(), NostrError> {
     let pubkey = XOnlyPublicKey::from_str(client_pk.into())
         .map_err(|_| NostrError::FailedPubkeyValidation)?;
@@ -138,11 +132,28 @@ pub async fn direct_message_nostr(
         .map(|_| ())
 }
 
-impl IntoFuture for NostrManager {
+impl Future for NostrManager {
     type Output = Result<(), std::io::Error>;
-    type IntoFuture = Ready<Self::Output>;
 
-    fn into_future(self) -> Self::IntoFuture {
-        ready(self.run())
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Call an async function using the `async` keyword and `await` keyword
+        let async_fn = async { self.clone().run().await };
+
+        // Convert the async function to a future using `Box::pin`
+        let mut future = Box::pin(async_fn);
+
+        // Poll the future using `poll` on the returned `Pin` reference
+        match future.as_mut().poll(cx) {
+            Poll::Ready(res) => match res {
+                Ok(_) => return Poll::Ready(Ok(())),
+                Err(e) => {
+                    return Poll::Ready(Err(std::io::Error::new(
+                        ErrorKind::Other,
+                        format!("unexpected error in running nostr tasks: {:?}", e),
+                    )))
+                }
+            },
+            Poll::Pending => Poll::Pending,
+        }
     }
 }

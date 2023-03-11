@@ -4,10 +4,9 @@ use crate::{
     bot::{Bot, Channels, Message},
     configuration::{DatabaseSettings, NostrSettings, Settings},
     nostr_manager::NostrManager,
-    mempool_manager::MempoolManager, alert_manager::{AlertManager,AlertCommunication}
+    mempool_manager::{MempoolManager, MempoolData}, alert_manager::{AlertManager,AlertCommunication}
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use tokio::sync::mpsc;
 use signal_hook::flag;
 pub struct Application {
     bot: Bot,
@@ -43,8 +42,8 @@ pub async fn build_bot(
     nostr_configuration: NostrSettings,
 ) -> Result<Bot, anyhow::Error> {
     // wire up communication between processes
-    let (send_to_nostr, listen_from_nostr) = mpsc::channel::<Message>(1);
-    let (send_to_alert_nostrbot, listen_from_alert) = mpsc::channel::<Message>(1);
+    let (send_to_nostr, listen_from_nostr) = crossbeam_channel::unbounded::<Message<String>>();
+    let (send_to_alert_nostrbot, listen_from_alert) = crossbeam_channel::unbounded::<Message<String>>();
     let alert_nostr = Channels {
         send: send_to_nostr,
         listen: listen_from_alert
@@ -53,24 +52,19 @@ pub async fn build_bot(
         send: send_to_alert_nostrbot,
         listen: listen_from_nostr
     };
-    let (send_to_membot, listen_from_alert) = mpsc::channel::<Message>(1);
-    let (send_to_alert_membot, listen_from_membot) = mpsc::channel::<Message>(1);
-    let mempool_comm = Channels {
-        send: send_to_membot,
-        listen: listen_from_alert
-    };
+    let (send_to_alert_membot, listen_from_membot) = crossbeam_channel::unbounded::<Message<MempoolData>>();
     let alert_mempool = Channels {
         send: send_to_alert_membot,
         listen: listen_from_membot
     };
     let alert_coms = AlertCommunication {
-        mempool_com: alert_mempool,
+        mempool_com: alert_mempool.clone(),
         nostr_com: alert_nostr
     };
     let kill_signal = Arc::new(AtomicBool::new(false));
-    // wire up background processes
-    let mempool_manager = MempoolManager::build(mempool_url, nostr_comm, "mainnet".into(), kill_signal.clone()).await;
-    let nostr_manager = NostrManager::build(nostr_configuration, mempool_comm, kill_signal.clone()).await?;
+    // wire up background processes (will need one for each network we want to support, ie mainnet, testnet, signet, regtest)
+    let mempool_manager = MempoolManager::build(mempool_url, alert_mempool, "mainnet".into(), kill_signal.clone()).await;
+    let nostr_manager = NostrManager::build(nostr_configuration, nostr_comm, kill_signal.clone()).await?;
     let alert_manger = AlertManager::build(db_pool, alert_coms, kill_signal.clone()).await;
 
     //TODO: add trace around DB queries
