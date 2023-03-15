@@ -2,7 +2,7 @@ mempool:
   url: "https://mempool.space"
 database:
   host: "127.0.0.1"
-  port: 15429
+  port: 15415
   username: "postgres"
   password: "password"
   database_name: "nostrmempoolalerts"

@@ -8,11 +8,13 @@ use crate::{
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use signal_hook::flag;
+use tracing::instrument;
 pub struct Application {
     bot: Bot,
 }
 
 impl Application {
+    #[instrument(skip_all)]
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
         let bot = build_bot(
@@ -23,12 +25,14 @@ impl Application {
         .await?;
         Ok(Self { bot })
     }
+    #[instrument(skip_all)]
     pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
         flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.bot.kill_signal))?;
         self.bot.await
     }
 }
 
+#[instrument(skip_all)]
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new()
         .acquire_timeout(std::time::Duration::from_secs(2))
@@ -36,6 +40,7 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
 }
 
 //Want to create a single bot that runs mempoolspace and nostr_client in different threads
+#[instrument(skip_all)]
 pub async fn build_bot(
     db_pool: PgPool,
     mempool_url: &str,
@@ -64,15 +69,15 @@ pub async fn build_bot(
     let kill_signal = Arc::new(AtomicBool::new(false));
     // wire up background processes (will need one for each network we want to support, ie mainnet, testnet, signet, regtest)
     let mempool_manager = MempoolManager::build(mempool_url, alert_mempool, "mainnet".into(), kill_signal.clone()).await;
-    let nostr_manager = NostrManager::build(nostr_configuration, nostr_comm, kill_signal.clone()).await?;
-    let alert_manger = AlertManager::build(db_pool, alert_coms, kill_signal.clone()).await;
+    let nostr_manager = NostrManager::build(db_pool.clone(), nostr_configuration, nostr_comm, kill_signal.clone()).await?;
+    let alert_manger = AlertManager::build(db_pool, alert_coms, kill_signal.clone()).await?;
 
     //TODO: add trace around DB queries
     let bot = Bot {
         mempool_manager: mempool_manager,
         nostr_manager: nostr_manager,
         alert_manager: alert_manger,
-        kill_signal: kill_signal.clone()
+        kill_signal: kill_signal
     };
     Ok(bot)
 }

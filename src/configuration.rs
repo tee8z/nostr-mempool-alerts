@@ -2,6 +2,7 @@ use secrecy::{ExposeSecret, Secret};
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use sqlx::ConnectOptions;
+use tracing::instrument;
 use std::convert::{TryFrom, TryInto};
 
 #[derive(Clone, serde::Deserialize)]
@@ -34,6 +35,7 @@ pub struct DatabaseSettings {
 }
 
 impl DatabaseSettings {
+    #[instrument(skip_all)]
     pub fn without_db(&self) -> PgConnectOptions {
         let ssl_mode = if self.require_ssl {
             PgSslMode::Require
@@ -47,6 +49,7 @@ impl DatabaseSettings {
             .port(self.port)
             .ssl_mode(ssl_mode)
     }
+    #[instrument(skip_all)]
     pub fn with_db(&self) -> PgConnectOptions {
         let mut options = self.without_db().database(&self.database_name);
         options.log_statements(tracing::log::LevelFilter::Trace);
@@ -54,6 +57,7 @@ impl DatabaseSettings {
     }
 }
 
+#[instrument]
 pub fn get_configuration() -> Result<Settings, config::ConfigError>  {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory.");
     let configuration_directory = base_path.join("configuration");

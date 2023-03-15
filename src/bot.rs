@@ -1,5 +1,6 @@
 use crossbeam_channel::{Receiver, Sender};
 use futures_util::{future::join_all, Future};
+use tracing::instrument;
 use std::{
     io::ErrorKind,
     sync::{
@@ -34,7 +35,7 @@ Lifecycle of an alert
  * - utxo movement - this is user request specific and thus trickiest to implement
  */
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Channels<T> {
     pub send: Sender<Message<T>>,
     pub listen: Receiver<Message<T>>,
@@ -48,6 +49,7 @@ pub struct Bot {
 }
 
 impl Bot {
+    #[instrument(skip_all)]
     pub async fn run(self) -> Result<(), std::io::Error> {
         let mut tasks = vec![];
         //spin up the two clients that internally handle keeping themselves running
@@ -66,6 +68,12 @@ impl Bot {
 pub struct Message<T> {
     pub val: T,
 }
+
+impl<T> From<T> for Message<T> {
+    fn from(input: T) -> Self {
+        Message { val: input }
+    }
+} 
 
 impl Future for Bot {
     type Output = Result<(), std::io::Error>;
