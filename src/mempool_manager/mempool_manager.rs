@@ -1,32 +1,34 @@
 use super::{BlockTip, MempoolData, RecommendedFees, TransactionID};
 use crate::{
-    bot::{self, Channels},
-    mempool_manager::MempoolRaw,
+    mempool_manager::MempoolRaw, bot::{Channels, self},
 };
+use anyhow::Context as AnyhowContext;
 use crossbeam_channel::{Receiver, Sender};
 use futures_util::{future::join_all, pin_mut, FutureExt, SinkExt, StreamExt};
 use nostr_sdk::nostr::url;
 use serde::{Deserialize, Serialize};
 use std::{
     future::Future,
+    io::ErrorKind,
     str,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
     task::{Context, Poll},
-    vec, io::ErrorKind,
+    vec,
 };
-use tokio_tungstenite::{connect_async, tungstenite};
+use tokio_tungstenite::{connect_async, tungstenite, };
+use tracing::instrument;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MempoolManager {
-    pub mempool_space: String,
+ pub mempool_space: String,
     connect_addr: String,
-    pub kill_signal: Arc<AtomicBool>,
+    kill_signal: Arc<AtomicBool>,
     send_to_alert_manager: Sender<bot::Message<MempoolData>>,
 }
-
+#[derive(Debug)]
 pub struct MempoolNetworkWS {}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -35,37 +37,55 @@ struct MempoolMessage {
     pub data: Option<Vec<String>>,
 }
 
+impl MempoolMessage {
+    pub fn to_string(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
+//TODO: make a custom error type that resolves to an anyhow error to the map_err() calls can be removed
+
 impl MempoolNetworkWS {
     //listen to mempool websocket to be notified new block was found
+    #[instrument(skip_all)]
     async fn listen_for_new_block(
         self,
         connect_addr: String,
         new_block_comm: Sender<bot::Message<MempoolRaw>>,
         kill_signal: Arc<AtomicBool>,
-    ) {
-        let url = url::Url::parse(connect_addr.as_str()).unwrap();
-        let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+    ) -> Result<(), anyhow::Error> {
+        let url = url::Url::parse(connect_addr.as_str()).map_err(|e| anyhow::Error::new(e))?;
+        let (ws_stream, _) = connect_async(url)
+            .await
+            .map_err(|e| anyhow::Error::msg(e))?;
 
         let (mut write, read) = ws_stream.split();
-        let init_message = serde_json::to_string(&MempoolMessage {
+        let init_message = &MempoolMessage {
             action: "init".to_owned(),
             data: None,
-        })
-        .unwrap();
-        let set_want = serde_json::to_string(&MempoolMessage {
+        }
+        .to_string()
+        .map_err(|e| anyhow::Error::msg(e))?;
+
+        let set_want = &MempoolMessage {
             action: "want".to_owned(),
             data: Some(vec!["blocks".to_owned()]),
-        })
-        .unwrap();
+        }
+        .to_string()
+        .map_err(|e| anyhow::Error::msg(e))?;
 
         write
-            .send(tokio_tungstenite::tungstenite::Message::Text(init_message))
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                init_message.to_owned(),
+            ))
             .await
-            .expect("failed to send init message to mempool.space");
+            .map_err(|e| anyhow::Error::msg(e))?;
         write
-            .send(tokio_tungstenite::tungstenite::Message::Text(set_want))
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                set_want.to_owned(),
+            ))
             .await
-            .expect("failed to send want message to mempool.space");
+            .map_err(|e| anyhow::Error::msg(e))?;
 
         let mut tasks = vec![];
         let ping_kill_signal = kill_signal.clone();
@@ -77,15 +97,12 @@ impl MempoolNetworkWS {
                     return;
                 }
                 let ping = tungstenite::protocol::Message::Ping(vec![0; 124]);
-                match write.send(ping).await {
-                    Ok(_) => {
-                        tokio::time::sleep(spleed_time).await;
-                    }
-                    Err(e) => {
-                        tracing::error!("error sending ping message to mempool.space: {:?}", e);
-                        break;
-                    }
-                }
+                write
+                    .send(ping)
+                    .await
+                    .unwrap_or_else(|e| tracing::error!("error trying to send ping: {:?}", e));
+
+                tokio::time::sleep(spleed_time).await;
             }
         })
         .boxed();
@@ -98,41 +115,35 @@ impl MempoolNetworkWS {
                         tracing::info!("stopping listening for new blocks from the mempool");
                         return;
                     }
-                    let data = match message {
-                        Ok(message) => Some(message.into_data()),
-                        Err(e) => {
-                            tracing::error!("error listening for new blocks: {:?}", e);
-                            None
-                        }
-                    };
-                    if data == None || data == Some(vec![0; 124]) {
-                        return;
-                    }
-                    let binary_data = data.unwrap();
-                    let new_data = match String::from_utf8(binary_data) {
-                        Ok(v) => v,
-                        Err(e) => panic!("invalid UTF-8 sequence: {}", e),
-                    };
-
-                    let data_val: MempoolRaw = serde_json::from_str(&new_data)
-                        .expect("error marshalling mempool websocket data to block root");
-                    tracing::info!("new block was found from the mempool! {:?}", data_val.backend_info.hostname);
-                    new_block_comm.send(bot::Message { val: data_val }).unwrap();
+                    //TODO: see if there is a better way to handle this error than using .expect() that causes a panic
+                    let raw_message = message.expect("error getting message from mempool.space");
+                    let mempool_data: MempoolRaw = MempoolRaw::from(raw_message);
+                    tracing::info!(
+                        "new block was found from the mempool! {:?}",
+                        mempool_data.backend_info.hostname
+                    );
+                    new_block_comm
+                        .send(bot::Message { val: mempool_data })
+                        .unwrap_or_else(|e| {
+                            tracing::error!("error sending new mempool data for a block: {:?}", e)
+                        });
                 })
             };
             pin_mut!(read_operation);
             tracing::info!("starting to listen for new blocks");
             tracing::info!("listening to: {}", connect_addr);
-            read_operation.await
+            read_operation.await;
         })
         .boxed();
         tasks.push(read_operations);
         let mempool_handlers = join_all(tasks);
         mempool_handlers.await;
+        Ok(())
     }
 }
 
 impl MempoolManager {
+    #[instrument(skip(alert_manager, kill_signal))]
     pub async fn build(
         mempool_url: &str,
         alert_manager: Channels<MempoolData>,
@@ -157,6 +168,7 @@ impl MempoolManager {
         }
     }
 
+    #[instrument(skip(self))]
     pub async fn run(self) -> bool {
         let mempool_ws = MempoolNetworkWS {};
         let kill_signal = self.kill_signal.clone();
@@ -180,13 +192,20 @@ impl MempoolManager {
                     send_new_block,
                     kill_mempool_watching_new_block.clone(),
                 )
-                .await;
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!("error listening for a new block: {:?}", e)
+                });
         })
         .boxed();
         let watch_current_state = tokio::spawn(async move {
             //get current state on start up and send to alert manager
             tracing::info!("getting initial state");
-            build_mempool_state(base_url.clone(), send_to_alert.clone()).await;
+            build_mempool_state(base_url.clone(), send_to_alert.clone())
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!("error trying to build the mempool state: {:?}", e)
+                });
             if kill_handle_new_block.load(Ordering::Relaxed) {
                 tracing::info!("stopping listening for new block state");
                 return;
@@ -197,7 +216,8 @@ impl MempoolManager {
                 send_to_alert.clone(),
                 kill_handle_new_block.clone(),
             )
-            .await;
+            .await
+            .unwrap_or_else(|e| tracing::error!("error trying to handle new block: {:?}", e));
         })
         .boxed();
         tasks.push(watch_current_state);
@@ -212,55 +232,59 @@ impl Future for MempoolManager {
     type Output = Result<(), std::io::Error>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Call an async function using the `async` keyword and `await` keyword
         let async_fn = async { self.clone().run().await };
-
-        // Convert the async function to a future using `Box::pin`
         let mut future = Box::pin(async_fn);
 
-        // Poll the future using `poll` on the returned `Pin` reference
         match future.as_mut().poll(cx) {
-            Poll::Ready(result) =>{
+            Poll::Ready(result) => {
                 if result {
-                    return Poll::Ready(Ok(()))
+                    return Poll::Ready(Ok(()));
                 }
-                 Poll::Ready(Err(std::io::Error::new(ErrorKind::Other,"unexpected error running mempool manager")))
-                },
+                Poll::Ready(Err(std::io::Error::new(
+                    ErrorKind::Other,
+                    "unexpected error running mempool manager",
+                )))
+            }
             Poll::Pending => Poll::Pending,
         }
     }
 }
 
+#[instrument(skip_all)]
 async fn handle_new_block(
     new_block_recv: Receiver<bot::Message<MempoolRaw>>,
     send_to_alert_manager: Sender<bot::Message<MempoolData>>,
     kill_new_block_watch: Arc<AtomicBool>,
-) {
+) -> Result<(), anyhow::Error> {
     loop {
         if kill_new_block_watch.load(Ordering::Relaxed) {
             break;
         }
-        let new_block = match new_block_recv.recv() {
-            Ok(block_data) => Some(block_data),
-            Err(e) => {
-                tracing::error!("error reading from new block recv channel: {:?}", e);
-                None
-            }
-        };
-        if new_block.is_none() {
-            continue;
-        }
+        let new_block = new_block_recv.recv().map_err(|e| anyhow::Error::new(e))?;
+
         let last_block = new_block.clone();
-        tracing::info!("a new block was found! {:?}", last_block.unwrap().val.blocks.last().unwrap());
-        create_and_send_new_block(new_block.unwrap().val, send_to_alert_manager.clone()).await;
+        tracing::info!(
+            "a new block was found! {:?}",
+            last_block
+                .val
+                .blocks
+                .last()
+                .context("error getting last block from data")
+        );
+        create_and_send_new_block(new_block.val, send_to_alert_manager.clone()).await
+        .unwrap_or_else(|e| {
+            tracing::error!("error creating and sending a new block: {:?}", e)
+        });
     }
+    Ok(())
 }
 
+#[instrument(skip_all)]
 async fn create_and_send_new_block(
     new_block: MempoolRaw,
     send_to_alert_manager: Sender<bot::Message<MempoolData>>,
-) {
-    let newest_block = new_block.blocks.last().unwrap();
+) -> Result<(), anyhow::Error> {
+    let newest_block = new_block.blocks.last().ok_or_else(|| anyhow::Error::msg("last block was empty"))?;
     let fees = new_block.fees;
     let transaction_ids: Vec<TransactionID> = new_block
         .transactions
@@ -270,69 +294,77 @@ async fn create_and_send_new_block(
         })
         .collect();
     let mempool_data = MempoolData {
-        fees: RecommendedFees { 
-            fastest_fee: fees.fastest_fee, 
-            half_hour_fee: fees.half_hour_fee, 
-            hour_fee: fees.hour_fee, 
-            economy_fee: fees.economy_fee, 
-            minimum_fee: fees.minimum_fee 
+        fees: RecommendedFees {
+            fastest_fee: fees.fastest_fee,
+            half_hour_fee: fees.half_hour_fee,
+            hour_fee: fees.hour_fee,
+            economy_fee: fees.economy_fee,
+            minimum_fee: fees.minimum_fee,
         },
         transactions: transaction_ids,
-        block: BlockTip { height: newest_block.height as u64, hash: newest_block.id.to_owned() }
+        block: BlockTip {
+            height: newest_block.height as u64,
+            hash: newest_block.id.to_owned(),
+        },
     };
-    let _ = send_current_state(send_to_alert_manager.clone(), mempool_data).await;
+    send_current_state(send_to_alert_manager.clone(), mempool_data).await
 }
 
+#[instrument(skip(send_to_alert_manager))]
 async fn build_mempool_state(
     base_url: String,
     send_to_alert_manager: Sender<bot::Message<MempoolData>>,
-) {
+) -> Result<(), anyhow::Error> {
     tracing::info!("pulling new block data from mempool.space");
-    let current_block = current_block(base_url.clone()).await;
-    let transactions = transactions(base_url.clone(), current_block.hash.clone()).await;
-    let mempool_fees = mempool_recommended_fees(base_url.clone()).await;
+    let current_block = current_block(base_url.clone()).await?;
+    let transactions = transactions(base_url.clone(), current_block.hash.clone()).await?;
+    let mempool_fees = mempool_recommended_fees(base_url.clone()).await?;
     let mempool_data = MempoolData {
         fees: mempool_fees,
         transactions: transactions,
         block: current_block,
     };
     tracing::info!("sending new block data to alert manager");
-    let _ = send_current_state(send_to_alert_manager.clone(), mempool_data).await;
+    send_current_state(send_to_alert_manager.clone(), mempool_data).await
 }
 
-async fn current_block(base_url: String) -> BlockTip {
+//TODO: better error handling here, don't want the process to die do the mepool.space being down, should just zombiefy
+#[instrument]
+async fn current_block(base_url: String) -> Result<BlockTip,anyhow::Error> {
     let client = reqwest::Client::new();
     let height_url = format!("{}/api/blocks/tip/height", base_url);
     let height_response = client
         .get(height_url)
         .send()
-        .await
-        .expect("failed to get tip height.");
-    let raw_height = height_response.text().await.unwrap();
-    let converted_height = raw_height.parse::<u64>().unwrap();
+        .await?;
+
+    let raw_height = height_response.text().await.map_err(|e| anyhow::Error::new(e))?;
+    let converted_height = raw_height.parse::<u64>().map_err(|e| anyhow::Error::new(e))?;
 
     let url = format!("{}/api/blocks/tip/hash", base_url);
     let hash_response = client
         .get(url)
         .send()
-        .await
-        .expect("failed to get tip hash.");
-    let hash = hash_response.text().await.unwrap();
+        .await?;
 
-    BlockTip {
+    let hash = hash_response.text().await.map_err(|e| anyhow::Error::new(e))?;
+
+    Ok(BlockTip {
         hash: hash,
         height: converted_height,
-    }
+    })
 }
 
-async fn transactions(base_url: String, block_hash: String) -> Vec<TransactionID> {
+#[instrument]
+async fn transactions(base_url: String, block_hash: String) -> Result<Vec<TransactionID>,anyhow::Error> {
     let client = reqwest::Client::new();
     let url = format!("{}/api/block/{block_hash}/txids", base_url);
     let response = client
         .get(url)
         .send()
         .await
-        .expect("Failed to get transactions.");
+        .map_err(|e| anyhow::Error::new(e))?;
+
     let transactions: Vec<TransactionID> = response
         .text()
         .await
@@ -341,28 +373,28 @@ async fn transactions(base_url: String, block_hash: String) -> Vec<TransactionID
             tx_id: tx.to_owned(),
         })
         .collect();
-    transactions
+    Ok(transactions)
 }
 
-async fn mempool_recommended_fees(base_url: String) -> RecommendedFees {
+#[instrument]
+async fn mempool_recommended_fees(base_url: String) -> Result<RecommendedFees, anyhow::Error> {
     let client = reqwest::Client::new();
     let url = format!("{}/api/v1/fees/recommended", base_url);
     let response = client
         .get(url)
         .send()
-        .await
-        .expect("Failed to get recommended fees.");
-    let response_body = response.json::<RecommendedFees>().await.unwrap();
-    response_body
+        .await?;
+    response.json::<RecommendedFees>().await.map_err(|e| anyhow::Error::new(e))
 }
 
+#[instrument(skip(send_to_alert_manager))]
 async fn send_current_state(
     send_to_alert_manager: Sender<bot::Message<MempoolData>>,
     message: MempoolData,
-) {
+) -> Result<(), anyhow::Error> {
     send_to_alert_manager
         .send(bot::Message {
             val: message.into(),
         })
-        .unwrap();
+        .map_err(|e| anyhow::Error::new(e))
 }

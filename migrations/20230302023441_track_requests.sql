@@ -6,16 +6,16 @@ CREATE TABLE alert_types(
 
 /*
  * 1) UTXO_MOVEMENT - utxo movement (need actual utxo to watch)
- * 2) TRANS_CONFIRM_HEIGHT - transaction confirmation height (need height)
- * 3) MEMPOOL_FEE_LEVEL - mempool fee hitting a given threshold (need fee value in vbytes)
+ * 2) CONFIRM_HEIGHT - transaction confirmation height (need height)
+ * 3) FEE_LEVEL - mempool fee hitting a given threshold (need fee value in vbytes)
  * 4) BLOCK_HEIGHT - a given block height has been reached (need height)
 */
 INSERT INTO alert_types(val)
 VALUES
-    ('UTXO_MOVEMENT'),
-    ('TRANS_CONFIRM_HEIGHT'),
-    ('MEMPOOL_FEE_LEVEL'),
-    ('BLOCK_HEIGHT');
+    ('CONFIRM_HEIGHT'),
+    ('FEE_LEVEL'),
+    ('BLOCK_HEIGHT'),
+    ('UTXO_MOVEMENT');
 
 -- Add migration script here
 CREATE TABLE alerts(
@@ -23,13 +23,18 @@ CREATE TABLE alerts(
     alert_type_id INT NOT NULL,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+    matched_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
     requestor_pk TEXT NOT NULL, --nostr public key of the individual asking for the alert to be sent to them
     threshold_num BIGINT, -- block height and fee go here
-    identifier TEXT, -- UTXO would go here
+    block_state JSONB,
+    event_data_identifier TEXT, -- UTXO would go here
     sent_at TIMESTAMPTZ,
-    sent_responsed JSONB, -- might end up dropping, not sure
+    sent_response TEXT, -- might end up dropping, not sure
     PRIMARY KEY(id),
     CONSTRAINT fk_request_type
       FOREIGN KEY(alert_type_id) 
 	  REFERENCES alert_types(id)
 );
+
+CREATE UNIQUE INDEX alert_requestor_pk_active_type_idx on alerts (alert_type_id, active, requestor_pk);
+CREATE INDEX alert_sent_idx ON alerts (sent_at, active);  

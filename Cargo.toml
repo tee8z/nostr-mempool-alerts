@@ -12,7 +12,7 @@ lazy_static = "1.4.0"
 tokio = { version = "1.25", features = ["full"] }
 serde = "1.0.115"
 config = { version = "0.13", default-features = false, features = ["yaml"] }
-sqlx = { version = "0.6", default-features = false, features = ["macros", "postgres", "uuid", "chrono", "migrate", "offline", "runtime-tokio-native-tls"] }
+sqlx = { version = "0.6.3", default-features = false, features = ["macros", "json", "postgres", "uuid", "chrono", "migrate", "offline", "runtime-tokio-native-tls"] }
 tracing = "0.1.19"
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 tracing-bunyan-formatter = "0.3"
@@ -27,7 +27,7 @@ signal-hook = "0.3.15"
 futures-util = "0.3.26"
 crossbeam-channel = "0.5.7"
 async-trait = "0.1.66"
-serde_json = "1.0.61"
+serde_json = { version = "1.0.61", features = ["raw_value"] }
 
 
 [dev-dependencies]
