@@ -63,14 +63,6 @@ jobs:
             --features ${{ env.SQLX_FEATURES }}
             --no-default-features
             --locked
-      - name: Create .env file
-        run: |
-          touch .env
-          echo DB_CONNECTION=${{env.DB_CONNECTION}} >> .env
-          echo DATABASE_URL=${{env.DB_CONNECTION}} >> .env
-          cat .env
-          export DB_CONNECTION=${{env.DB_CONNECTION}}
-          export DATABASE_URL=${{env.DB_CONNECTION}}
       - name: Migrate database
         run: |
           sudo apt-get install libpq-dev -y
@@ -201,15 +193,7 @@ jobs:
             --features ${{ env.SQLX_FEATURES }}
             --no-default-features
             --locked
-      - name: Create .env file
-        run: |
-          touch .env
-          echo DB_CONNECTION=${{env.DB_CONNECTION}} >> .env
-          echo DATABASE_URL=${{env.DB_CONNECTION}} >> .env
-          cat .env
-          export DB_CONNECTION=${{env.DB_CONNECTION}}
-          export DATABASE_URL=${{env.DB_CONNECTION}}
-        
+
       - name: Migrate database
         run: |
           sudo apt-get install libpq-dev -y

@@ -86,7 +86,7 @@ impl Future for Bot {
             Poll::Ready(res) => match res {
                 Ok(_) => Poll::Ready(Ok(())),
                 Err(e) => {
-                    return Poll::Ready(Err(std::io::Error::new(
+                    Poll::Ready(Err(std::io::Error::new(
                         ErrorKind::Other,
                         format!("unexpected error in running bot tasks: {:?}", e),
                     )))
