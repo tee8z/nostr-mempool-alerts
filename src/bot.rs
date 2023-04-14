@@ -7,9 +7,7 @@ use std::{
 };
 use tracing::instrument;
 
-use crate::{
-    alert_manager::AlertManager, mempool_manager::MempoolManager, nostr_manager::NostrManager,
-};
+use crate::{alert::AlertManager, mempool::MempoolManager, nostr::NostrManager};
 
 /*
 NOTE:
@@ -86,13 +84,11 @@ impl Future for Bot {
         //NOTE: Poll the future using `poll` on the returned `Pin` reference
         match future.as_mut().poll(cx) {
             Poll::Ready(res) => match res {
-                Ok(_) => return Poll::Ready(Ok(())),
-                Err(e) => {
-                    return Poll::Ready(Err(std::io::Error::new(
-                        ErrorKind::Other,
-                        format!("unexpected error in running bot tasks: {:?}", e),
-                    )))
-                }
+                Ok(_) => Poll::Ready(Ok(())),
+                Err(e) => Poll::Ready(Err(std::io::Error::new(
+                    ErrorKind::Other,
+                    format!("unexpected error in running bot tasks: {:?}", e),
+                ))),
             },
             Poll::Pending => Poll::Pending,
         }

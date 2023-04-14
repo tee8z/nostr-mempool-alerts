@@ -1,8 +1,8 @@
+pub mod alert;
+pub mod bot;
 pub mod configuration;
-pub mod mempool_manager;
-pub mod nostr_manager;
-pub mod alert_manager;
+pub mod error_fmt;
+pub mod mempool;
+pub mod nostr;
 pub mod startup;
 pub mod telemetry;
-pub mod bot;
-pub mod error_fmt;

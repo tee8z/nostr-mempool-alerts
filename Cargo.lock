@@ -1152,7 +1152,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "nostr-mempool-alerts"
+name = "nostr-sdk"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dbe65805e30a754561795313347d2945d38fe88c1faed90deb445c680cae660"
+dependencies = [
+ "futures-util",
+ "log",
+ "nostr",
+ "once_cell",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-socks",
+ "tokio-tungstenite",
+ "webpki-roots",
+]
+
+[[package]]
+name = "nostr_mempool_alerts"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1178,24 +1196,6 @@ dependencies = [
  "tracing-log",
  "tracing-subscriber",
  "wiremock",
-]
-
-[[package]]
-name = "nostr-sdk"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dbe65805e30a754561795313347d2945d38fe88c1faed90deb445c680cae660"
-dependencies = [
- "futures-util",
- "log",
- "nostr",
- "once_cell",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tokio-socks",
- "tokio-tungstenite",
- "webpki-roots",
 ]
 
 [[package]]
