@@ -85,12 +85,10 @@ impl Future for AlertManager {
         match future.as_mut().poll(cx) {
             Poll::Ready(res) => match res {
                 Ok(_) => Poll::Ready(Ok(())),
-                Err(e) => {
-                    Poll::Ready(Err(std::io::Error::new(
-                        ErrorKind::Other,
-                        format!("unexpected error in running alert manager: {:?}", e),
-                    )))
-                }
+                Err(e) => Poll::Ready(Err(std::io::Error::new(
+                    ErrorKind::Other,
+                    format!("unexpected error in running alert manager: {:?}", e),
+                ))),
             },
             Poll::Pending => Poll::Pending,
         }
