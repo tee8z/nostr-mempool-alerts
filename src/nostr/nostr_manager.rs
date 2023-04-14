@@ -190,12 +190,10 @@ impl Future for NostrManager {
         match future.as_mut().poll(cx) {
             Poll::Ready(res) => match res {
                 Ok(_) => Poll::Ready(Ok(())),
-                Err(e) => {
-                    Poll::Ready(Err(std::io::Error::new(
-                        ErrorKind::Other,
-                        format!("unexpected error in running nostr tasks: {:?}", e),
-                    )))
-                }
+                Err(e) => Poll::Ready(Err(std::io::Error::new(
+                    ErrorKind::Other,
+                    format!("unexpected error in running nostr tasks: {:?}", e),
+                ))),
             },
             Poll::Pending => Poll::Pending,
         }
