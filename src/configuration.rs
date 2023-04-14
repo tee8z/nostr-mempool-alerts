@@ -2,14 +2,14 @@ use secrecy::{ExposeSecret, Secret};
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use sqlx::ConnectOptions;
-use tracing::instrument;
 use std::convert::{TryFrom, TryInto};
+use tracing::instrument;
 
 #[derive(Clone, serde::Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub mempool: MempoolSettings,
-    pub nostr: NostrSettings
+    pub nostr: NostrSettings,
 }
 
 #[derive(Clone, serde::Deserialize)]
@@ -58,7 +58,7 @@ impl DatabaseSettings {
 }
 
 #[instrument]
-pub fn get_configuration() -> Result<Settings, config::ConfigError>  {
+pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory.");
     let configuration_directory = base_path.join("configuration");
     let environment: Environment = std::env::var("APP_ENVIRONMENT")
