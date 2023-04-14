@@ -17,11 +17,11 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: postgres
         ports:
-          - 15429:5432
+          - 15415:5432
     env:
       SQLX_VERSION: 0.6.2
       SQLX_FEATURES: "rustls,postgres"
-      DB_CONNECTION: "postgres://postgres:password@localhost:15429/nostrvault"
+      DB_CONNECTION: "postgres://postgres:password@localhost:15415/nostrmempoolalerts"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -166,11 +166,11 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: postgres
         ports:
-          - 15429:5432
+          - 15415:5432
     env:
       SQLX_VERSION: 0.6.2
       SQLX_FEATURES: "rustls,postgres"
-      DB_CONNECTION: "postgres://postgres:password@localhost:15429/nostrvault"
+      DB_CONNECTION: "postgres://postgres:password@localhost:15415/nostrmempoolalerts"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
