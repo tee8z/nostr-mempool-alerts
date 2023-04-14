@@ -1,0 +1,113 @@
+{
+  "db": "PostgreSQL",
+  "05b41cef9a1aadbcb35b8c4dcfb67699df3dbe574e0447814d4eaf6a29b532f3": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "alert_type_id",
+          "ordinal": 1,
+          "type_info": "Int4"
+        },
+        {
+          "name": "active",
+          "ordinal": 2,
+          "type_info": "Bool"
+        },
+        {
+          "name": "requestor_pk",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "threshold_num",
+          "ordinal": 4,
+          "type_info": "Int8"
+        },
+        {
+          "name": "event_data_identifier",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "block_state",
+          "ordinal": 6,
+          "type_info": "Jsonb"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "\n        SELECT \n            id, \n            alert_type_id, \n            active,\n            requestor_pk, \n            threshold_num, \n            event_data_identifier,\n            block_state\n        FROM alerts\n        WHERE active;\n        "
+  },
+  "9837633ee6bb28e99f4952396424e008940fffefbbd1c2efb28de032793fe1ec": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text",
+          "Int8",
+          "Text"
+        ]
+      }
+    },
+    "query": "\n        INSERT INTO alerts (alert_type_id, requestor_pk, threshold_num, event_data_identifier)\n        VALUES ($1, $2, $3, $4)\n        RETURNING id, created_at\n        "
+  },
+  "caa9e8a416ec29f5eb3535986d9492211fc277af970845e47097b589d8850c2c": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "sent_at",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Text"
+        ]
+      }
+    },
+    "query": "\n        INSERT INTO notifications (alert_id, sent_message)\n        VALUES ($1, $2)\n        RETURNING id, sent_at\n        "
+  }
+}
