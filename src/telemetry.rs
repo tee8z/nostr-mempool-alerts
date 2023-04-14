@@ -11,8 +11,8 @@ pub fn get_subscriber<Sink>(
     sink: Sink,
 ) -> impl Subscriber + Send + Sync
 where
-    // Means Sink implements the `MakeWriter` trait for all choices of the lifetime parameter `'a`
-    // More detail: https://doc.rust-lang.org/nomicon/hrtb.html
+    //NOTE: Means Sink implements the `MakeWriter` trait for all choices of the lifetime parameter `'a`
+    //      More detail: https://doc.rust-lang.org/nomicon/hrtb.html
     Sink: for<'a> MakeWriter<'a> + Send + Sync + 'static,
 {
     let env_filter =

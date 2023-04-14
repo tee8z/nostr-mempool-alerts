@@ -1,5 +1,6 @@
 mempool:
-  url: "https://mempool.space"
+  #url: "https://mempool.space"
+  url: "http://localhost:8999"
 database:
   host: "127.0.0.1"
   port: 15415

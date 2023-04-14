@@ -25,8 +25,8 @@ pub enum NostrError {
     FailedToSend,
     #[error("Failed to validate pubkey")]
     FailedPubkeyValidation,
-    #[error("Failed to save update alert")]
-    FailedToSaveUpdate,
+    #[error("Failed to save alert notification")]
+    FailedToSave,
 }
 
 impl Debug for NostrError {
@@ -151,18 +151,16 @@ pub async fn build_nostr_message(alert: Alert) -> Result<NostrAlertMessage, Nost
 pub async fn update_alert(db: PgPool, message: NostrAlertMessage) -> Result<(), NostrError> {
     sqlx::query!(
         r#"
-    UPDATE alerts
-    SET 
-        sent_at = now(),
-        sent_response = $2
-    WHERE alerts.id = $1;
-    "#,
+        INSERT INTO notifications (alert_id, sent_message)
+        VALUES ($1, $2)
+        RETURNING id, sent_at
+        "#,
         message.id,
-        message.val,
+        message.val
     )
-    .execute(&db)
+    .fetch_one(&db)
     .await
-    .map_err(|_| NostrError::FailedToSaveUpdate)?;
+    .map_err(|_| NostrError::FailedToSave)?;
 
     Ok(())
 }

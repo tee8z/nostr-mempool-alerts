@@ -7,7 +7,7 @@ use super::{Alert, State};
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 #[repr(i32)]
 pub enum AlertKind {
-    //    UtxoMovement(i32), -- TODO at a later date
+    //    UtxoMovement(i32), -- TODO: implement this alert at a later date
     ConfirmHeight = 1001,
     FeeLevel = 1002,
     BlockHeight = 1003,
@@ -50,7 +50,7 @@ pub trait AlertKindHandler {
     fn update_confirm_height_alert(&self, alert: Alert, new_block: MempoolData) -> Option<Alert>;
     fn update_fee_level_alert(&self, alert: Alert, new_block: MempoolData) -> Option<Alert>;
 }
-//functions should determine if the alert is still active and a notification should be sent
+
 impl AlertKindHandler for AlertKind {
     #[instrument(skip_all)]
     fn update_block_height_alert(&self, mut alert: Alert, new_block: MempoolData) -> Option<Alert> {
@@ -83,12 +83,16 @@ impl AlertKindHandler for AlertKind {
             .transactions
             .contains(&TransactionID::from(transaction_id))
         {
-            alert.should_send = true;
+           
             alert.block_state = Some(sqlx::types::Json(State {
                 fees: Some(new_block.fees),
                 block_tip: Some(new_block.block),
                 transaction_found: Some(true),
             }));
+            return Some(alert.clone());
+        }
+        if alert.transaction_found() && alert.confirm_height_has_reached(new_block.block){
+            alert.should_send = true;
             alert.active = false;
             return Some(alert.clone());
         }
@@ -97,8 +101,7 @@ impl AlertKindHandler for AlertKind {
 
     #[instrument(skip_all)]
     fn update_fee_level_alert(&self, mut alert: Alert, new_block: MempoolData) -> Option<Alert> {
-        if alert.threshold_num.is_some()
-            && (alert.threshold_num.unwrap() as i64) <= new_block.fees.half_hour_fee
+        if alert.has_reached_fee_level(new_block.fees)
         {
             alert.should_send = true;
             alert.block_state = Some(sqlx::types::Json(State {
