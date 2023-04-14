@@ -43,7 +43,7 @@ impl AlertManager {
         })
     }
 
-    /* Items the manager needs to handle:
+    /* NOTE: Items the manager needs to handle:
     1) listen to the nostr channel to see if a user as asked for a new activity to be tracked or asked for one to stop being tracked
     2) listen to the mempool channel for new blocks, update all the exisiting activity being tracked & send a message over the nostr channel for items have have hit a thresholdddd
     */
@@ -70,7 +70,6 @@ impl AlertManager {
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
         });
-        //keep thread alive until kill signal is sent
 
         Ok(())
     }
@@ -144,7 +143,7 @@ async fn process_block_data(
         .iter()
         .filter(|alert| alert.should_send)
         .map(|alert| send_alert_to_nostr(alert, nostr_com.clone()))
-        .count(); // used to make sure that the iterator is fully evaluated
+        .count(); //NOTE: used to make sure that the iterator is fully evaluated
 
     return Ok(());
 }
@@ -200,7 +199,7 @@ async fn get_active_alerts(db_pool: PgPool) -> Result<Vec<Alert>, anyhow::Error>
             event_data_identifier,
             block_state
         FROM alerts
-        WHERE sent_at IS NULL AND active;
+        WHERE active;
         "#,
     )
     .fetch_all(&db_pool)

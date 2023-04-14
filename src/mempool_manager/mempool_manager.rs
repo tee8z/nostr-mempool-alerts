@@ -43,10 +43,10 @@ impl MempoolMessage {
     }
 }
 
-//TODO: make a custom error type that resolves to an anyhow error to the map_err() calls can be removed
+//TODO: make a custom error type that resolves to an anyhow error so the map_err() calls can be removed
 
 impl MempoolNetworkWS {
-    //listen to mempool websocket to be notified new block was found
+    //NOTE: listen to mempool websocket to be notified new block was found
     #[instrument(skip_all)]
     async fn listen_for_new_block(
         self,
@@ -186,6 +186,7 @@ impl MempoolManager {
                 tracing::info!("stopping watching the mempool");
                 return;
             }
+            tracing::info!("starting mempool.space websocketlistener");
             mempool_ws
                 .listen_for_new_block(
                     connect_addr,
@@ -196,10 +197,11 @@ impl MempoolManager {
                 .unwrap_or_else(|e| {
                     tracing::error!("error listening for a new block: {:?}", e)
                 });
+            tracing::info!("shutting down mempool.space websocketlistener");
         })
         .boxed();
         let watch_current_state = tokio::spawn(async move {
-            //get current state on start up and send to alert manager
+
             tracing::info!("getting initial state");
             build_mempool_state(base_url.clone(), send_to_alert.clone())
                 .await
@@ -210,7 +212,7 @@ impl MempoolManager {
                 tracing::info!("stopping listening for new block state");
                 return;
             }
-            //wait for new block and send new state to alert manager
+            tracing::info!("starting new_block channel listener and current state emitter");
             handle_new_block(
                 listen_for_new_block,
                 send_to_alert.clone(),
@@ -218,6 +220,8 @@ impl MempoolManager {
             )
             .await
             .unwrap_or_else(|e| tracing::error!("error trying to handle new block: {:?}", e));
+            tracing::info!("shutting down starting new_block channel listener and current state emitter");
+
         })
         .boxed();
         tasks.push(watch_current_state);
@@ -328,7 +332,7 @@ async fn build_mempool_state(
     send_current_state(send_to_alert_manager.clone(), mempool_data).await
 }
 
-//TODO: better error handling here, don't want the process to die do the mepool.space being down, should just zombiefy
+//TODO: better error handling here, don't want the process to die due to mepool.space being down, should just zombiefy
 #[instrument]
 async fn current_block(base_url: String) -> Result<BlockTip,anyhow::Error> {
     let client = reqwest::Client::new();

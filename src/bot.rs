@@ -1,20 +1,18 @@
 use crossbeam_channel::{Receiver, Sender};
 use futures_util::{future::join_all, Future};
-use tracing::instrument;
 use std::{
     io::ErrorKind,
-    sync::{
-        atomic::AtomicBool,
-        Arc,
-    },
+    sync::{atomic::AtomicBool, Arc},
     task::{Context, Poll},
 };
+use tracing::instrument;
 
 use crate::{
     alert_manager::AlertManager, mempool_manager::MempoolManager, nostr_manager::NostrManager,
 };
 
 /*
+NOTE:
 Lifecycle of an alert
 1) user messages bot via nostr "hey I'd like to listen for block height 755678"
 2) nostr_manager listens to nostr stream for message & stores new messages
@@ -28,12 +26,13 @@ Lifecycle of an alert
 10) nostr_mananger fires alert off to user
  */
 
-/*
- * - block height - all same data
- * - mempool fee - all same data
- * - transaction confirmation height - can be calculated if we know when the first block it was found it was
- * - utxo movement - this is user request specific and thus trickiest to implement
- */
+/* NOTE:
+Required data needs
+- block height - all same data
+- mempool fee - all same data
+- transaction confirmation height - can be calculated if we know when the first block it was found it was
+- utxo movement - this is user request specific and thus trickiest to implement
+*/
 
 #[derive(Clone, Debug)]
 pub struct Channels<T> {
@@ -52,7 +51,7 @@ impl Bot {
     #[instrument(skip_all)]
     pub async fn run(self) -> Result<(), std::io::Error> {
         let mut tasks = vec![];
-        //spin up the two clients that internally handle keeping themselves running
+        //NOTE: spins up the 3 managers that handle their needs internally, and communicates with each other over channels
         let mempool_manager_task = tokio::spawn(async { self.mempool_manager.await });
         tasks.push(mempool_manager_task);
         let nostr_manager_task = tokio::spawn(async { self.nostr_manager.await });
@@ -73,19 +72,18 @@ impl<T> From<T> for Message<T> {
     fn from(input: T) -> Self {
         Message { val: input }
     }
-} 
+}
 
 impl Future for Bot {
     type Output = Result<(), std::io::Error>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Call an async function using the `async` keyword and `await` keyword
         let async_fn = async { self.clone().run().await };
 
-        // Convert the async function to a future using `Box::pin`
+        //NOTE: Convert the async function to a future using `Box::pin`
         let mut future = Box::pin(async_fn);
 
-        // Poll the future using `poll` on the returned `Pin` reference
+        //NOTE: Poll the future using `poll` on the returned `Pin` reference
         match future.as_mut().poll(cx) {
             Poll::Ready(res) => match res {
                 Ok(_) => return Poll::Ready(Ok(())),

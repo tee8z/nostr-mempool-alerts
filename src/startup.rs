@@ -39,14 +39,13 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
         .connect_lazy_with(configuration.with_db())
 }
 
-//Want to create a single bot that runs mempoolspace and nostr_client in different threads
 #[instrument(skip_all)]
 pub async fn build_bot(
     db_pool: PgPool,
     mempool_url: &str,
     nostr_configuration: NostrSettings,
 ) -> Result<Bot, anyhow::Error> {
-    // wire up communication between processes
+    //NOTE: wires up communication between processes
     let (send_to_nostr, listen_from_nostr) = crossbeam_channel::unbounded::<Message<String>>();
     let (send_to_alert_nostrbot, listen_from_alert) = crossbeam_channel::unbounded::<Message<String>>();
     let alert_nostr = Channels {
@@ -67,7 +66,8 @@ pub async fn build_bot(
         nostr_com: alert_nostr
     };
     let kill_signal = Arc::new(AtomicBool::new(false));
-    // wire up background processes (will need one for each network we want to support, ie mainnet, testnet, signet, regtest)
+    //NOTE: wires up background processes (will need one for each network we want to support, ie mainnet, testnet, signet, regtest)
+    //TODO: make mempool_managers configurable (mainnet/testnet/signet/regtest) 
     let mempool_manager = MempoolManager::build(mempool_url, alert_mempool, "mainnet".into(), kill_signal.clone()).await;
     let nostr_manager = NostrManager::build(db_pool.clone(), nostr_configuration, nostr_comm, kill_signal.clone()).await?;
     let alert_manger = AlertManager::build(db_pool, alert_coms, kill_signal.clone()).await?;

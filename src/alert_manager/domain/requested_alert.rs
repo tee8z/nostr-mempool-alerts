@@ -4,11 +4,11 @@ use super::AlertKind;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RequestedAlert {
-    pub kind: AlertKind, //change to enum
-    pub requestor_pk: String, // change to validator type
+    pub kind: AlertKind, //TODO: change to enum
+    pub requestor_pk: String, //TODO: change to validator type
     
     pub threshold_num: Option<u64>,
-    pub event_data_identifier: Option<String>, // possible a validator type?
+    pub event_data_identifier: Option<String>, //TODO: possible a validator type?
  }
 //TODO: see if there is a safer way to do this without using expect()
  impl From<String> for RequestedAlert {
