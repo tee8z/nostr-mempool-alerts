@@ -78,7 +78,7 @@ jobs:
       - name: Check sqlx-data.json is up-to-date
         run: |
           export DB_CONNECTION=${{env.DB_CONNECTION}}
-          cargo sqlx prepare --database-url=${{env.DB_CONNECTION}} --check -- --bin nostr_vault
+          cargo sqlx prepare --database-url=${{env.DB_CONNECTION}} --check -- --bin nostr_mempool_alerts
       - name: Run cargo test
         uses: actions-rs/cargo@v1
         with:

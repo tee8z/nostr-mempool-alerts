@@ -1,5 +1,5 @@
 [package]
-name = "nostr-mempool-alerts"
+name = "nostr_mempool_alerts"
 version = "0.1.0"
 edition = "2021"
 include = ["/src", "LICENSE", "/dist", "/configuration"]

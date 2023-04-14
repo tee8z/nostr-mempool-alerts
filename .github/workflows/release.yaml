@@ -77,10 +77,10 @@ jobs:
                 stage=$(mktemp -d -t tmp)
                 ;;
         esac
-        cp target/${{ matrix.target }}/release/nostr_vault $stage/
+        cp target/${{ matrix.target }}/release/nostr_mempool_alerts $stage/
         cd $stage
         RELEASE_VERSION=${GITHUB_REF#refs/tags/}
-        ASSET_NAME="nostr_vault-$RELEASE_VERSION-${{ matrix.target }}.tar.gz"
+        ASSET_NAME="nostr_mempool_alerts-$RELEASE_VERSION-${{ matrix.target }}.tar.gz"
         ASSET_PATH="$src/$ASSET_NAME"
         CHECKSUM_PATH="$ASSET_PATH.sha256"
         echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
