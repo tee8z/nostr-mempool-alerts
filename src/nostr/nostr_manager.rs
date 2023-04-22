@@ -93,9 +93,12 @@ impl NostrManager {
         let mut tasks = vec![];
         let direct_message_sender = tokio::spawn(async move {
             loop {
+                tracing::info!("starting to listen for message from alert manager in nostr manager");
                 let message = alert_listen
                     .recv()
                     .expect("error receiving message from alert manager");
+                tracing::info!("new message picked up in nostr manager from alert manage: {:?}", message);
+
                 let alert: Alert = serde_json::from_str(&message.val)
                     .expect("error trying to convert alert json into struct");
 
@@ -123,7 +126,7 @@ impl NostrManager {
                 if kill_notification_watcher.load(Ordering::Relaxed) {
                     break;
                 }
-                println!("{notifcation:?}");
+                tracing::info!("notification: {notifcation:?}");
                 alert_send
                     .send(bot::Message {
                         val: format!("{:?}", notifcation),

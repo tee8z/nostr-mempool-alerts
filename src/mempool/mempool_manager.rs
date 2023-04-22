@@ -5,8 +5,9 @@ use crate::{
 };
 use anyhow::Context as AnyhowContext;
 use crossbeam_channel::{Receiver, Sender};
-use futures_util::{future::join_all, pin_mut, FutureExt, SinkExt, StreamExt};
+use futures_util::{future::join_all, FutureExt, SinkExt, StreamExt};
 use nostr_sdk::nostr::url;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::{
     future::Future,
@@ -17,6 +18,7 @@ use std::{
         Arc,
     },
     task::{Context, Poll},
+    time::Duration,
     vec,
 };
 use tokio_tungstenite::{connect_async, tungstenite};
@@ -56,9 +58,11 @@ impl MempoolNetworkWS {
         kill_signal: Arc<AtomicBool>,
     ) -> Result<(), anyhow::Error> {
         let url = url::Url::parse(connect_addr.as_str()).map_err(anyhow::Error::new)?;
-        let (ws_stream, _) = connect_async(url).await.map_err(anyhow::Error::msg)?;
+        let (ws_stream, _) = connect_async(url.clone())
+            .await
+            .map_err(anyhow::Error::msg)?;
 
-        let (mut write, read) = ws_stream.split();
+        let (mut write, mut read) = ws_stream.split();
         let init_message = &MempoolMessage {
             action: "init".to_owned(),
             data: None,
@@ -72,71 +76,66 @@ impl MempoolNetworkWS {
         }
         .to_string()
         .map_err(anyhow::Error::msg)?;
-
         write
             .send(tokio_tungstenite::tungstenite::Message::Text(
-                init_message.to_owned(),
+                init_message.clone().to_owned(),
             ))
             .await
             .map_err(anyhow::Error::msg)?;
         write
             .send(tokio_tungstenite::tungstenite::Message::Text(
-                set_want.to_owned(),
+                set_want.clone().to_owned(),
             ))
             .await
             .map_err(anyhow::Error::msg)?;
 
-        let mut tasks = vec![];
-        let ping_kill_signal = kill_signal.clone();
-        let ping = tokio::spawn(async move {
-            let spleed_time = tokio::time::Duration::new(30, 0);
-            loop {
-                if ping_kill_signal.clone().load(Ordering::Relaxed) {
-                    tracing::info!("stopping pinging mempool.space");
-                    return;
-                }
-                let ping = tungstenite::protocol::Message::Ping(vec![0; 124]);
-                write
-                    .send(ping)
-                    .await
-                    .unwrap_or_else(|e| tracing::error!("error trying to send ping: {:?}", e));
-
-                tokio::time::sleep(spleed_time).await;
-            }
-        })
-        .boxed();
-        tasks.push(ping);
-
-        let read_operations = tokio::spawn(async move {
-            let read_operation = {
-                read.for_each(|message| async {
-                    if kill_signal.load(Ordering::Relaxed) {
-                        tracing::info!("stopping listening for new blocks from the mempool");
-                        return;
+        let sleep_time = Duration::from_millis(20000);
+        let mut interval = tokio::time::interval(sleep_time);
+        loop {
+            tokio::select! {
+                msg = read.next() => {
+                    if kill_signal.clone().load(Ordering::Relaxed) {
+                        break;
                     }
-                    //TODO: see if there is a better way to handle this error than using .expect() that causes a panic
-                    let raw_message = message.expect("error getting message from mempool.space");
-                    let mempool_data: MempoolRaw = MempoolRaw::from(raw_message);
-                    tracing::info!(
-                        "new block was found from the mempool! {:?}",
-                        mempool_data.backend_info.hostname
-                    );
-                    new_block_comm
-                        .send(bot::Message { val: mempool_data })
-                        .unwrap_or_else(|e| {
-                            tracing::error!("error sending new mempool data for a block: {:?}", e)
-                        });
-                })
-            };
-            pin_mut!(read_operation);
-            tracing::info!("starting to listen for new blocks");
-            tracing::info!("listening to: {}", connect_addr);
-            read_operation.await;
-        })
-        .boxed();
-        tasks.push(read_operations);
-        let mempool_handlers = join_all(tasks);
-        mempool_handlers.await;
+                    match msg {
+                        Some(msg) => {
+                            let msg = msg?;
+                            if msg.is_text() {
+                                let mempool_data: MempoolRaw = MempoolRaw::from(msg);
+                                tracing::info!(
+                                    "new block was found from the mempool! {:?}",
+                                    url.clone()
+                                );
+                                new_block_comm
+                                    .send(bot::Message { val: mempool_data })
+                                    .unwrap_or_else(|e| {
+                                        tracing::error!("error sending new mempool data for a block: {:?}", e)
+                                    });
+                                tracing::info!("starting waiting for next loop");
+                            } else if msg.is_close() {
+                                tracing::info!("stream to {:?} closed", url.clone());
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                _ = interval.tick() => {
+                    if kill_signal.clone().load(Ordering::Relaxed) {
+                        tracing::info!("stopping pinging {:?}", url.clone());
+                        break;
+                    }
+                    tracing::info!("next pinging loop");
+                    let ping = tungstenite::protocol::Message::Ping(vec![0; 124]);
+                    write
+                        .send(ping)
+                        .await
+                        .map_err(anyhow::Error::msg)?;
+                    tracing::info!("successfully pinged, waiting for: {:?}", sleep_time);
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -154,13 +153,10 @@ impl MempoolManager {
         if network_type != "mainnet" {
             api_endpoint = combo.as_ref();
         }
-        let connect_addr = format!(
-            "{}/{}",
-            "wss://mempool.space".to_owned(),
-            api_endpoint.to_owned()
-        );
+        let websocket = format!("wss://{}", mempool_url);
+        let connect_addr = format!("{}/{}", websocket.to_owned(), api_endpoint.to_owned());
         Self {
-            mempool_space: mempool_url.to_owned(),
+            mempool_space: format!("https://{}", mempool_url),
             send_to_alert_manager: alert_manager.send,
             connect_addr,
             kill_signal,
@@ -180,7 +176,9 @@ impl MempoolManager {
         let send_to_alert = self.send_to_alert_manager.clone();
         let kill_handle_new_block = kill_signal.clone();
         let mut tasks = vec![];
-        let watch_for_new_block = tokio::spawn(async move {
+        let watch_for_new_block: std::pin::Pin<
+            Box<dyn Future<Output = Result<(), tokio::task::JoinError>> + Send>,
+        > = tokio::spawn(async move {
             if kill_mempool_watching_new_block.load(Ordering::Relaxed) {
                 tracing::info!("stopping watching the mempool");
                 return;
@@ -264,14 +262,26 @@ async fn handle_new_block(
         let new_block = new_block_recv.recv().map_err(anyhow::Error::new)?;
 
         let last_block = new_block.clone();
-        tracing::info!(
-            "a new block was found! {:?}",
-            last_block
-                .val
-                .blocks
-                .last()
-                .context("error getting last block from data")
-        );
+        if last_block.val.blocks.is_some() {
+            tracing::info!(
+                "a new block was found! {:?}",
+                last_block
+                    .val
+                    .blocks
+                    .unwrap()
+                    .last()
+                    .context("error getting last block from data")
+            );
+        } else {
+            tracing::info!(
+                "a new block was found! {:?}",
+                last_block
+                    .val
+                    .block
+                    .context("error getting last block from data")
+            );
+        }
+
         create_and_send_new_block(new_block.val, send_to_alert_manager.clone())
             .await
             .unwrap_or_else(|e| tracing::error!("error creating and sending a new block: {:?}", e));
@@ -284,32 +294,41 @@ async fn create_and_send_new_block(
     new_block: MempoolRaw,
     send_to_alert_manager: Sender<bot::Message<MempoolData>>,
 ) -> Result<(), anyhow::Error> {
-    let newest_block = new_block
-        .blocks
-        .last()
-        .ok_or_else(|| anyhow::Error::msg("last block was empty"))?;
+    let mut newest_block = None;
+    if new_block.blocks.is_some() {
+        newest_block = Some(new_block.blocks.unwrap().last().unwrap().to_owned());
+    } else {
+        newest_block = Some(new_block.block.unwrap());
+    }
     let fees = new_block.fees;
-    let transaction_ids: Vec<TransactionID> = new_block
-        .transactions
-        .into_iter()
-        .map(|transaction| TransactionID {
-            tx_id: transaction.txid,
-        })
-        .collect();
+    let mut transaction_ids = None;
+    if new_block.transactions.is_some() {
+        transaction_ids = Some(
+            new_block
+                .transactions
+                .unwrap()
+                .into_iter()
+                .map(|transaction| TransactionID {
+                    tx_id: transaction.txid,
+                })
+                .collect(),
+        );
+    }
     let mempool_data = MempoolData {
-        fees: RecommendedFees {
+        fees: Some(RecommendedFees {
             fastest_fee: fees.fastest_fee,
             half_hour_fee: fees.half_hour_fee,
             hour_fee: fees.hour_fee,
             economy_fee: fees.economy_fee,
             minimum_fee: fees.minimum_fee,
-        },
+        }),
         transactions: transaction_ids,
         block: BlockTip {
-            height: newest_block.height as u64,
-            hash: newest_block.id.to_owned(),
+            height: newest_block.clone().unwrap().height as u64,
+            hash: newest_block.clone().unwrap().id.to_owned(),
         },
     };
+    tracing::info!("current block height: {:?}", mempool_data.block.height);
     send_current_state(send_to_alert_manager.clone(), mempool_data).await
 }
 
@@ -320,14 +339,20 @@ async fn build_mempool_state(
 ) -> Result<(), anyhow::Error> {
     tracing::info!("pulling new block data from mempool.space");
     let current_block = current_block(base_url.clone()).await?;
+    tracing::info!("block_tip: {:?}", current_block);
+
     let transactions = transactions(base_url.clone(), current_block.hash.clone()).await?;
+    tracing::info!("transactions: {:?}", transactions);
+
     let mempool_fees = mempool_recommended_fees(base_url.clone()).await?;
+    tracing::info!("mempool_fees: {:?}", mempool_fees);
+
     let mempool_data = MempoolData {
         fees: mempool_fees,
-        transactions,
+        transactions: Some(transactions),
         block: current_block,
     };
-    tracing::info!("sending new block data to alert manager");
+    tracing::info!("sending new block data to alert manager {:?}", mempool_data);
     send_current_state(send_to_alert_manager.clone(), mempool_data).await
 }
 
@@ -337,12 +362,21 @@ async fn current_block(base_url: String) -> Result<BlockTip, anyhow::Error> {
     let client = reqwest::Client::new();
     let height_url = format!("{}/api/blocks/tip/height", base_url);
     let height_response = client.get(height_url).send().await?;
+    if !height_response.status().is_success() {
+        tracing::error!("error getting block height: {:?}", height_response);
+        return Err(anyhow::Error::msg("error getting block height"));
+    }
 
     let raw_height = height_response.text().await.map_err(anyhow::Error::new)?;
     let converted_height = raw_height.parse::<u64>().map_err(anyhow::Error::new)?;
 
     let url = format!("{}/api/blocks/tip/hash", base_url);
     let hash_response = client.get(url).send().await?;
+
+    if !hash_response.status().is_success() {
+        tracing::error!("error getting block hash: {:?}", hash_response);
+        return Err(anyhow::Error::msg("error getting block hash"));
+    }
 
     let hash = hash_response.text().await.map_err(anyhow::Error::new)?;
 
@@ -361,6 +395,10 @@ async fn transactions(
     let url = format!("{}/api/block/{block_hash}/txids", base_url);
     let response = client.get(url).send().await.map_err(anyhow::Error::new)?;
 
+    if !response.status().is_success() {
+        tracing::error!("error getting transaction: {:?}", response);
+        return Err(anyhow::Error::msg("error getting transaction"));
+    }
     let transactions: Vec<TransactionID> = response
         .text()
         .await
@@ -373,14 +411,27 @@ async fn transactions(
 }
 
 #[instrument]
-async fn mempool_recommended_fees(base_url: String) -> Result<RecommendedFees, anyhow::Error> {
+async fn mempool_recommended_fees(
+    base_url: String,
+) -> Result<Option<RecommendedFees>, anyhow::Error> {
     let client = reqwest::Client::new();
     let url = format!("{}/api/v1/fees/recommended", base_url);
     let response = client.get(url).send().await?;
-    response
+
+    if !response.status().is_success() {
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        tracing::error!("error getting recommended fees: {:?}", response);
+        return Err(anyhow::Error::msg("error getting recommended fees"));
+    }
+
+    tracing::info!("recommended fees: {:?}", response);
+    let res = response
         .json::<RecommendedFees>()
         .await
-        .map_err(anyhow::Error::new)
+        .map_err(|e| anyhow::Error::new(e))?;
+    Ok(Some(res))
 }
 
 #[instrument(skip(send_to_alert_manager))]

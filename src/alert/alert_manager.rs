@@ -103,18 +103,25 @@ async fn listen_to_mempool(
 ) -> Result<(), anyhow::Error> {
     let mempool_com = communication.mempool_com.clone();
     let nostr_com = communication.nostr_com.clone();
+    tokio::spawn(async move {
+        loop {
+            if kill_mempool_watch.load(Ordering::Relaxed) {
+                break;
+            }
+            tracing::info!("start listening for new block data");
+            let new_block: Option<Message<MempoolData>> = mempool_com.listen.recv().ok();
+            if new_block.is_some() {
+                tracing::info!("start processing new block data {:?}", new_block);
+                match process_block_data(db.clone(), nostr_com.clone(), new_block.unwrap().val.to_owned()).await {
+                    Err(e) => tracing::error!("error processing block: {:?}", e),
+                    Ok(_) => {
+                        tracing::info!("processed block data successfully")
+                    }
+                }
+            }
 
-    loop {
-        if kill_mempool_watch.load(Ordering::Relaxed) {
-            break;
         }
-        let new_block = mempool_com
-            .listen
-            .recv()
-            .context("error reading from mempool recv channel")?;
-
-        process_block_data(db.clone(), nostr_com.clone(), new_block.val.to_owned()).await?;
-    }
+    });
     Ok(())
 }
 
@@ -124,21 +131,22 @@ async fn process_block_data(
     nostr_com: Channels<String>,
     new_block: MempoolData,
 ) -> Result<(), anyhow::Error> {
-    let active_alerts = get_active_alerts(db.clone())
+
+    tokio::spawn( async move {
+        let active_alerts = get_active_alerts(db.clone())
         .await
-        .context("error getting active alerts")?;
+        .context("error getting active alerts").unwrap();
 
-    let alerts_to_update = active_alerts
-        .iter()
-        .filter_map(|alert| handle_alert(alert.clone(), new_block.clone()))
-        .collect::<Vec<Alert>>();
+        let alerts_to_update = active_alerts
+            .iter()
+            .filter_map(|alert| handle_alert(alert.clone(), new_block.clone()))
+            .collect::<Vec<Alert>>();
 
-    batch_update_alerts(db.clone(), alerts_to_update.clone()).await?;
-
-    alerts_to_update
+        alerts_to_update
         .iter()
         .filter(|alert| alert.should_send)
-        .try_for_each(|alert| send_alert_to_nostr(alert, nostr_com.clone()))?;
+        .try_for_each(|alert| send_alert_to_nostr(alert, nostr_com.clone())).unwrap();
+    });
 
     Ok(())
 }
@@ -146,7 +154,7 @@ async fn process_block_data(
 #[instrument]
 fn send_alert_to_nostr(alert: &Alert, nostr_com: Channels<String>) -> Result<(), anyhow::Error> {
     let alert_string = alert.to_string().map_err(anyhow::Error::new)?;
-
+    tracing::info!("sending alert to nostr manager: {:?}", alert_string.clone());
     nostr_com
         .send
         .send(Message::from(alert_string))
@@ -156,7 +164,7 @@ fn send_alert_to_nostr(alert: &Alert, nostr_com: Channels<String>) -> Result<(),
 
 #[instrument]
 fn handle_alert(alert: Alert, new_block: MempoolData) -> Option<Alert> {
-    match alert.kind {
+    let alert_updated = match alert.kind {
         AlertKind::ConfirmHeight => alert
             .kind
             .update_confirm_height_alert(alert.clone(), new_block),
@@ -164,7 +172,9 @@ fn handle_alert(alert: Alert, new_block: MempoolData) -> Option<Alert> {
         AlertKind::BlockHeight => alert
             .kind
             .update_block_height_alert(alert.clone(), new_block),
-    }
+    };
+
+    return alert_updated;
 }
 #[instrument(skip_all)]
 async fn handle_nostr(
@@ -177,8 +187,15 @@ async fn handle_nostr(
         if kill_mempool_watch.load(Ordering::Relaxed) {
             break;
         }
-        let new_alert_request = nostr_com.listen.recv().map_err(anyhow::Error::new)?;
-        create_alert_monitor(db.clone(), new_alert_request.val.into()).await?;
+        let new_alert_request = nostr_com.listen.recv().map_err(|e| anyhow::Error::new(e))?;
+        match new_alert_request.val.try_into() {
+            Ok(val) => {
+                create_alert_monitor(db.clone(), val).await?;
+            }
+            Err(e) => {
+                tracing::debug!("message not converted to alert request: {:?}", e)
+            }
+        }
     }
     Ok(())
 }
@@ -205,9 +222,9 @@ async fn get_active_alerts(db_pool: PgPool) -> Result<Vec<Alert>, anyhow::Error>
     .map(|rows| {
         rows.iter()
             .map(|row| {
-                let mut threshold_convt: Option<u64> = None;
+                let mut threshold_convt: Option<f64> = None;
                 if row.threshold_num.is_some() {
-                    threshold_convt = Some(row.threshold_num.unwrap() as u64);
+                    threshold_convt = Some(row.threshold_num.unwrap() as f64);
                 }
                 Alert {
                     id: row.id,
@@ -268,6 +285,9 @@ async fn batch_update_alerts(
 ) -> Result<(), anyhow::Error> {
     let update_items: Vec<AlertUpdate> =
         alerts_to_update.iter().map(|alert| alert.into()).collect();
+    if update_items.len() < 1 {
+        return Ok(());
+    }
     let query = format!(
         "UPDATE alerts 
         SET 
@@ -281,7 +301,7 @@ async fn batch_update_alerts(
             .collect::<Vec<_>>()
             .join(",")
     );
-
+    tracing::info!("batch_update_alerts query: {:?}", query);
     sqlx::query(&query)
         .execute(&db_pool)
         .await

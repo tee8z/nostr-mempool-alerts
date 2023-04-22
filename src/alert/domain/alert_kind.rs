@@ -54,11 +54,12 @@ pub trait AlertKindHandler {
 impl AlertKindHandler for AlertKind {
     #[instrument(skip_all)]
     fn update_block_height_alert(&self, mut alert: Alert, new_block: MempoolData) -> Option<Alert> {
-        let height = Some(new_block.block.height);
-        if alert.threshold_num >= height {
+        let conv_height = new_block.block.height as f64;
+        let height = Some(conv_height);
+        if alert.threshold_num >= height.clone() {
             alert.should_send = true;
             alert.block_state = Some(sqlx::types::Json(State {
-                fees: Some(new_block.fees),
+                fees: new_block.fees,
                 block_tip: Some(new_block.block),
                 transaction_found: Some(false),
             }));
@@ -80,10 +81,13 @@ impl AlertKindHandler for AlertKind {
         let transaction_id = alert.event_data_identifier.clone().unwrap();
         if new_block
             .transactions
+            .is_some() && new_block
+            .transactions
+            .unwrap()
             .contains(&TransactionID::from(transaction_id))
         {
             alert.block_state = Some(sqlx::types::Json(State {
-                fees: Some(new_block.fees),
+                fees: new_block.fees,
                 block_tip: Some(new_block.block),
                 transaction_found: Some(true),
             }));
@@ -99,10 +103,13 @@ impl AlertKindHandler for AlertKind {
 
     #[instrument(skip_all)]
     fn update_fee_level_alert(&self, mut alert: Alert, new_block: MempoolData) -> Option<Alert> {
-        if alert.has_reached_fee_level(new_block.fees) {
+        if alert.threshold_num.is_some()
+            && new_block.fees.is_some()
+            && (alert.threshold_num.unwrap() as f64) <= new_block.fees.unwrap().half_hour_fee
+        {
             alert.should_send = true;
             alert.block_state = Some(sqlx::types::Json(State {
-                fees: Some(new_block.fees),
+                fees: new_block.fees,
                 block_tip: Some(new_block.block),
                 transaction_found: Some(false),
             }));

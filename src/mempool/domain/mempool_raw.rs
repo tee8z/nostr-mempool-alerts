@@ -9,27 +9,32 @@ use super::{
 #[serde(rename_all = "camelCase")]
 pub struct MempoolRaw {
     pub mempool_info: MempoolInfo,
-    pub v_bytes_per_second: i64,
-    pub blocks: Vec<Block>,
-    pub conversions: Conversions,
+    pub v_bytes_per_second: Option<i64>,
+    pub blocks: Option<Vec<Block>>,
+    pub block: Option<Block>,
+    pub conversions: Option<Conversions>,
     #[serde(rename = "mempool-blocks")]
-    pub mempool_blocks: Vec<Block2>,
-    pub transactions: Vec<Transaction>,
-    pub backend_info: BackendInfo,
-    pub loading_indicators: LoadingIndicators,
+    pub mempool_blocks: Option<Vec<Block2>>,
+    pub transactions: Option<Vec<Transaction>>,
+    pub backend_info: Option<BackendInfo>,
+    pub loading_indicators: Option<LoadingIndicators>,
     pub da: Da,
     pub fees: Fees,
 }
 //TODO: see if there is a better way to handle this error beside using .expect which will cause a panic to occur
 impl From<tokio_tungstenite::tungstenite::Message> for MempoolRaw {
     fn from(raw_message: tokio_tungstenite::tungstenite::Message) -> Self {
-        let data = String::from_utf8(raw_message.into_data())
-            .map_err(|e| {
-                tracing::error!("error converting message raw data into a string: {:?}", e);
-                e
-            })
-            .expect("error marshalling mempool websocket data to block root");
-
+        tracing::info!("raw_message: {:?}", raw_message);
+    let data: String = String::from_utf8(raw_message.into()).map_err(|e| {
+        tracing::error!(
+            "error converting message raw data into a string: {:?}",
+            e
+        );
+        e
+    })
+    .expect("error marshalling mempool websocket data to block root");
+        tracing::info!("raw data: {:?}", data);
+        
         let converted: MempoolRaw = serde_json::from_str(&data)
             .map_err(|e| {
                 tracing::error!(
@@ -43,6 +48,7 @@ impl From<tokio_tungstenite::tungstenite::Message> for MempoolRaw {
             mempool_info: converted.mempool_info,
             v_bytes_per_second: converted.v_bytes_per_second,
             blocks: converted.blocks,
+            block: converted.block,
             conversions: converted.conversions,
             mempool_blocks: converted.mempool_blocks,
             transactions: converted.transactions,

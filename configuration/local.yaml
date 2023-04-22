@@ -1,5 +1,7 @@
 mempool:
-  url: "https://mempool.space"
+  url: "mutinynet.com"
+  #url: "https://mempool.space/"
+  #url: "https://mempool.space/signet"
 database:
   require_ssl: false
 nostr:

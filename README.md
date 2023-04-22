@@ -17,3 +17,7 @@ Plan to have a public one people can use
 * Future plans:
    * add a utxo movement tracking option (this one is trickier as the data to determine is user specific)
    * add ability to send over a nostr relays specified by the user
+
+### How to run
+- `cargo install bunyan`
+- `cargo run -q | bunyan`

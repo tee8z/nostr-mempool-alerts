@@ -5,6 +5,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MempoolData {
     pub block: BlockTip,
-    pub transactions: Vec<TransactionID>,
-    pub fees: RecommendedFees,
+    pub transactions: Option<Vec<TransactionID>>,
+    pub fees: Option<RecommendedFees>,
 }
