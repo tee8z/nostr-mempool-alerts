@@ -25,16 +25,14 @@ pub struct MempoolRaw {
 impl From<tokio_tungstenite::tungstenite::Message> for MempoolRaw {
     fn from(raw_message: tokio_tungstenite::tungstenite::Message) -> Self {
         tracing::info!("raw_message: {:?}", raw_message);
-    let data: String = String::from_utf8(raw_message.into()).map_err(|e| {
-        tracing::error!(
-            "error converting message raw data into a string: {:?}",
-            e
-        );
-        e
-    })
-    .expect("error marshalling mempool websocket data to block root");
+        let data: String = String::from_utf8(raw_message.into())
+            .map_err(|e| {
+                tracing::error!("error converting message raw data into a string: {:?}", e);
+                e
+            })
+            .expect("error marshalling mempool websocket data to block root");
         tracing::info!("raw data: {:?}", data);
-        
+
         let converted: MempoolRaw = serde_json::from_str(&data)
             .map_err(|e| {
                 tracing::error!(

@@ -112,14 +112,19 @@ async fn listen_to_mempool(
             let new_block: Option<Message<MempoolData>> = mempool_com.listen.recv().ok();
             if new_block.is_some() {
                 tracing::info!("start processing new block data {:?}", new_block);
-                match process_block_data(db.clone(), nostr_com.clone(), new_block.unwrap().val.to_owned()).await {
+                match process_block_data(
+                    db.clone(),
+                    nostr_com.clone(),
+                    new_block.unwrap().val.to_owned(),
+                )
+                .await
+                {
                     Err(e) => tracing::error!("error processing block: {:?}", e),
                     Ok(_) => {
                         tracing::info!("processed block data successfully")
                     }
                 }
             }
-
         }
     });
     Ok(())
@@ -131,11 +136,11 @@ async fn process_block_data(
     nostr_com: Channels<String>,
     new_block: MempoolData,
 ) -> Result<(), anyhow::Error> {
-
-    tokio::spawn( async move {
+    tokio::spawn(async move {
         let active_alerts = get_active_alerts(db.clone())
-        .await
-        .context("error getting active alerts").unwrap();
+            .await
+            .context("error getting active alerts")
+            .unwrap();
 
         let alerts_to_update = active_alerts
             .iter()
@@ -143,9 +148,10 @@ async fn process_block_data(
             .collect::<Vec<Alert>>();
 
         alerts_to_update
-        .iter()
-        .filter(|alert| alert.should_send)
-        .try_for_each(|alert| send_alert_to_nostr(alert, nostr_com.clone())).unwrap();
+            .iter()
+            .filter(|alert| alert.should_send)
+            .try_for_each(|alert| send_alert_to_nostr(alert, nostr_com.clone()))
+            .unwrap();
     });
 
     Ok(())
@@ -154,7 +160,7 @@ async fn process_block_data(
 #[instrument]
 fn send_alert_to_nostr(alert: &Alert, nostr_com: Channels<String>) -> Result<(), anyhow::Error> {
     let alert_string = alert.to_string().map_err(anyhow::Error::new)?;
-    tracing::info!("sending alert to nostr manager: {:?}", alert_string.clone());
+    tracing::info!("sending alert to nostr manager: {:?}", alert_string);
     nostr_com
         .send
         .send(Message::from(alert_string))
@@ -164,7 +170,7 @@ fn send_alert_to_nostr(alert: &Alert, nostr_com: Channels<String>) -> Result<(),
 
 #[instrument]
 fn handle_alert(alert: Alert, new_block: MempoolData) -> Option<Alert> {
-    let alert_updated = match alert.kind {
+    match alert.kind {
         AlertKind::ConfirmHeight => alert
             .kind
             .update_confirm_height_alert(alert.clone(), new_block),
@@ -172,9 +178,7 @@ fn handle_alert(alert: Alert, new_block: MempoolData) -> Option<Alert> {
         AlertKind::BlockHeight => alert
             .kind
             .update_block_height_alert(alert.clone(), new_block),
-    };
-
-    return alert_updated;
+    }
 }
 #[instrument(skip_all)]
 async fn handle_nostr(
@@ -187,7 +191,7 @@ async fn handle_nostr(
         if kill_mempool_watch.load(Ordering::Relaxed) {
             break;
         }
-        let new_alert_request = nostr_com.listen.recv().map_err(|e| anyhow::Error::new(e))?;
+        let new_alert_request = nostr_com.listen.recv().map_err(anyhow::Error::new)?;
         match new_alert_request.val.try_into() {
             Ok(val) => {
                 create_alert_monitor(db.clone(), val).await?;
@@ -285,7 +289,7 @@ async fn batch_update_alerts(
 ) -> Result<(), anyhow::Error> {
     let update_items: Vec<AlertUpdate> =
         alerts_to_update.iter().map(|alert| alert.into()).collect();
-    if update_items.len() < 1 {
+    if update_items.is_empty() {
         return Ok(());
     }
     let query = format!(

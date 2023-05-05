@@ -154,7 +154,7 @@ impl MempoolManager {
             api_endpoint = combo.as_ref();
         }
         let websocket = format!("wss://{}", mempool_url);
-        let connect_addr = format!("{}/{}", websocket.to_owned(), api_endpoint.to_owned());
+        let connect_addr = format!("{}/{}", websocket, api_endpoint.to_owned());
         Self {
             mempool_space: format!("https://{}", mempool_url),
             send_to_alert_manager: alert_manager.send,
@@ -290,6 +290,7 @@ async fn handle_new_block(
 }
 
 #[instrument(skip_all)]
+#[allow(unused_assignments)]
 async fn create_and_send_new_block(
     new_block: MempoolRaw,
     send_to_alert_manager: Sender<bot::Message<MempoolData>>,
@@ -325,7 +326,7 @@ async fn create_and_send_new_block(
         transactions: transaction_ids,
         block: BlockTip {
             height: newest_block.clone().unwrap().height as u64,
-            hash: newest_block.clone().unwrap().id.to_owned(),
+            hash: newest_block.unwrap().id,
         },
     };
     tracing::info!("current block height: {:?}", mempool_data.block.height);
@@ -430,7 +431,7 @@ async fn mempool_recommended_fees(
     let res = response
         .json::<RecommendedFees>()
         .await
-        .map_err(|e| anyhow::Error::new(e))?;
+        .map_err(anyhow::Error::new)?;
     Ok(Some(res))
 }
 

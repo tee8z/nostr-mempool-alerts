@@ -56,7 +56,7 @@ impl AlertKindHandler for AlertKind {
     fn update_block_height_alert(&self, mut alert: Alert, new_block: MempoolData) -> Option<Alert> {
         let conv_height = new_block.block.height as f64;
         let height = Some(conv_height);
-        if alert.threshold_num >= height.clone() {
+        if alert.threshold_num >= height {
             alert.should_send = true;
             alert.block_state = Some(sqlx::types::Json(State {
                 fees: new_block.fees,
@@ -79,12 +79,11 @@ impl AlertKindHandler for AlertKind {
         alert.event_data_identifier.as_ref()?;
 
         let transaction_id = alert.event_data_identifier.clone().unwrap();
-        if new_block
-            .transactions
-            .is_some() && new_block
-            .transactions
-            .unwrap()
-            .contains(&TransactionID::from(transaction_id))
+        if new_block.transactions.is_some()
+            && new_block
+                .transactions
+                .unwrap()
+                .contains(&TransactionID::from(transaction_id))
         {
             alert.block_state = Some(sqlx::types::Json(State {
                 fees: new_block.fees,
@@ -105,7 +104,7 @@ impl AlertKindHandler for AlertKind {
     fn update_fee_level_alert(&self, mut alert: Alert, new_block: MempoolData) -> Option<Alert> {
         if alert.threshold_num.is_some()
             && new_block.fees.is_some()
-            && (alert.threshold_num.unwrap() as f64) <= new_block.fees.unwrap().half_hour_fee
+            && alert.threshold_num.unwrap() <= new_block.fees.unwrap().half_hour_fee
         {
             alert.should_send = true;
             alert.block_state = Some(sqlx::types::Json(State {

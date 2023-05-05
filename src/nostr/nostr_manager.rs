@@ -65,8 +65,8 @@ impl NostrManager {
         }
         client.connect().await;
         let metadata = Metadata::new()
-       // .name("mempool space bot")
-        //.display_name("mempool space bot")
+        .name("mempool space bot")
+        .display_name("mempool space bot")
         .about("a block notification bot that will publish a notification to a user when a block target has been hit or a block number has been reached");
         //.nip05()
         //.lud16()
@@ -93,11 +93,16 @@ impl NostrManager {
         let mut tasks = vec![];
         let direct_message_sender = tokio::spawn(async move {
             loop {
-                tracing::info!("starting to listen for message from alert manager in nostr manager");
+                tracing::info!(
+                    "starting to listen for message from alert manager in nostr manager"
+                );
                 let message = alert_listen
                     .recv()
                     .expect("error receiving message from alert manager");
-                tracing::info!("new message picked up in nostr manager from alert manage: {:?}", message);
+                tracing::info!(
+                    "new message picked up in nostr manager from alert manage: {:?}",
+                    message
+                );
 
                 let alert: Alert = serde_json::from_str(&message.val)
                     .expect("error trying to convert alert json into struct");
