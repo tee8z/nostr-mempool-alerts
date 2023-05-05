@@ -12,7 +12,7 @@ pub struct Alert {
     pub active: bool,
     pub should_send: bool,
     pub requestor_pk: String, // create a specific type for this
-    pub threshold_num: Option<u64>,
+    pub threshold_num: Option<f64>,
     pub event_data_identifier: Option<String>, //holds utxo or transactionID depending on alert kind
     pub block_state: Option<Json<State>>,
 }
@@ -38,7 +38,7 @@ impl Alert {
         if let Some(block_state) = store_block_state {
             if let Some(threshold_num) = self.threshold_num {
                 let delta = cur_block_tip.height - block_state.block_tip.clone().unwrap().height;
-                return threshold_num <= delta;
+                return threshold_num <= (delta) as f64;
             }
         }
         false
