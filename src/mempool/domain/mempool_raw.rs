@@ -8,7 +8,7 @@ use super::{
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MempoolRaw {
-    pub mempool_info: MempoolInfo,
+    pub mempool_info: Option<MempoolInfo>,
     pub v_bytes_per_second: Option<i64>,
     pub blocks: Option<Vec<Block>>,
     pub block: Option<Block>,
@@ -24,14 +24,14 @@ pub struct MempoolRaw {
 //TODO: see if there is a better way to handle this error beside using .expect which will cause a panic to occur
 impl From<tokio_tungstenite::tungstenite::Message> for MempoolRaw {
     fn from(raw_message: tokio_tungstenite::tungstenite::Message) -> Self {
-        tracing::info!("raw_message: {:?}", raw_message);
+        tracing::trace!("raw_message: {:?}", raw_message);
         let data: String = String::from_utf8(raw_message.into())
             .map_err(|e| {
                 tracing::error!("error converting message raw data into a string: {:?}", e);
                 e
             })
             .expect("error marshalling mempool websocket data to block root");
-        tracing::info!("raw data: {:?}", data);
+        tracing::trace!("raw data: {:?}", data);
 
         let converted: MempoolRaw = serde_json::from_str(&data)
             .map_err(|e| {

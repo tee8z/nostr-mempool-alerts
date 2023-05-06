@@ -1,9 +1,10 @@
 use crate::alert::Alert;
-use crate::bot::{self, Channels};
+use crate::bot::{Channels, Message};
 use crate::{configuration::NostrSettings, error_fmt::error_chain_fmt};
+use crossbeam_channel::Sender;
 use futures_util::{future::join_all, Future};
 use nostr_sdk::prelude::*;
-use secrecy::{ExposeSecret, Secret};
+use secrecy::ExposeSecret;
 use sqlx::PgPool;
 use std::io::ErrorKind;
 use std::{
@@ -36,8 +37,7 @@ impl Debug for NostrError {
 }
 #[derive(Clone)]
 pub struct NostrManager {
-    pub private_key: Secret<String>,
-    pub public_key: String,
+    pub keys: Keys,
     pub listen_relays: Vec<String>,
     pub kill_signal: Arc<AtomicBool>,
     alert_manager: Channels<String>,
@@ -53,27 +53,35 @@ impl NostrManager {
         alert_manager: Channels<String>,
         kill_signal: Arc<AtomicBool>,
     ) -> Result<Self, anyhow::Error> {
-        let private_key = Secret::new(configuration.private_key.expose_secret().to_owned());
+        let private_key =
+            SecretKey::from_bech32(configuration.private_key.expose_secret().to_owned())?;
         let listen_relays = configuration.nostr_relays;
-        let bot_keys =
-            Keys::from_sk_str(private_key.expose_secret()).map_err(anyhow::Error::new)?;
-        let client = Client::new(&bot_keys);
-        let public_key = client.keys().public_key().to_string();
-
+        let keys = Keys::new(private_key);
+        let opts = Options::new().wait_for_send(false);
+        let client = Client::with_opts(&keys, opts);
+        let public_key = client.keys().public_key().to_bech32()?;
+        tracing::info!("nostr pubkey for bot: {:?}", public_key);
         for listen in listen_relays.iter() {
             client.add_relay(listen, None).await?;
         }
         client.connect().await;
         let metadata = Metadata::new()
-        .name("mempool space bot")
+        .name("mempool_space_bot")
         .display_name("mempool space bot")
         .about("a block notification bot that will publish a notification to a user when a block target has been hit or a block number has been reached");
         //.nip05()
         //.lud16()
         client.set_metadata(metadata).await?;
+
+        let subscription = Filter::new()
+            .pubkey(keys.public_key())
+            .kind(Kind::EncryptedDirectMessage)
+            .since(Timestamp::now());
+
+        client.subscribe(vec![subscription]).await;
+
         Ok(Self {
-            private_key,
-            public_key,
+            keys,
             client,
             listen_relays,
             alert_manager,
@@ -91,14 +99,22 @@ impl NostrManager {
         let client_notification = client.clone();
         let kill_alert_watcher = kill_signal.clone();
         let mut tasks = vec![];
+        let keys = self.keys.clone();
         let direct_message_sender = tokio::spawn(async move {
             loop {
+                if kill_alert_watcher.load(Ordering::Relaxed) {
+                    break;
+                }
                 tracing::info!(
                     "starting to listen for message from alert manager in nostr manager"
                 );
-                let message = alert_listen
-                    .recv()
-                    .expect("error receiving message from alert manager");
+                let raw_message: Option<Message<String>> = alert_listen.recv().ok();
+                if raw_message.is_none() {
+                    tracing::warn!("no data found in message from alert manager in nostr manager");
+
+                    continue;
+                }
+                let message = raw_message.unwrap();
                 tracing::info!(
                     "new message picked up in nostr manager from alert manage: {:?}",
                     message
@@ -118,25 +134,57 @@ impl NostrManager {
                 update_alert(self.db.clone(), nostr_message)
                     .await
                     .unwrap_or_else(|e| tracing::error!("error updating nostr alert: {:?}", e));
-                if kill_alert_watcher.load(Ordering::Relaxed) {
-                    break;
-                }
             }
         });
         tasks.push(direct_message_sender);
         let kill_notification_watcher = kill_signal.clone();
+
         let notification_listener = tokio::spawn(async move {
-            let mut notifcations = client_notification.notifications();
-            while let Ok(notifcation) = notifcations.recv().await {
-                if kill_notification_watcher.load(Ordering::Relaxed) {
-                    break;
-                }
-                tracing::info!("notification: {notifcation:?}");
-                alert_send
-                    .send(bot::Message {
-                        val: format!("{:?}", notifcation),
-                    })
-                    .expect("error sending message to the alert manager");
+            if kill_notification_watcher.load(Ordering::Relaxed) {
+                return;
+            }
+            match client_notification
+                .clone()
+                .handle_notifications(|notification| async {
+                    if kill_notification_watcher.load(Ordering::Relaxed) {
+                        return Ok(());
+                    }
+                    if let RelayPoolNotification::Event(_url, event) = notification {
+                        if event.kind == Kind::EncryptedDirectMessage {
+                            match decrypt(
+                                &keys.clone().secret_key()?,
+                                &event.pubkey,
+                                &event.content,
+                            ) {
+                                Ok(msg) => {
+                                    tracing::info!("notification: {msg:?}");
+                                    let content: String = match msg.as_str() {
+                                        "/block_height" => block_height(alert_send.clone(), msg),
+                                        "/fees" => fees(alert_send.clone(), msg),
+                                        "/transaction" => transaction(alert_send.clone(), msg),
+                                        "/help" => help(),
+                                        _ => String::from(
+                                            "Invalid command, send /help to see all commands.",
+                                        ),
+                                    };
+
+                                    client_notification
+                                        .clone()
+                                        .send_direct_msg(event.pubkey, content)
+                                        .await?;
+                                }
+                                Err(e) => {
+                                    tracing::error!("Impossible to decrypt direct message: {e}")
+                                }
+                            }
+                        }
+                    }
+                    Ok(())
+                })
+                .await
+            {
+                Ok(_) => {}
+                Err(e) => tracing::error!("error handling nostr notification: {:?}", e),
             }
         });
         tasks.push(notification_listener);
@@ -146,8 +194,32 @@ impl NostrManager {
     }
 }
 
+//TODO: map the user's request to an alert needing to be set up
+fn block_height(_alert_send: Sender<Message<String>>, _msg: String) -> String {
+    "".to_string()
+}
+
+fn fees(_alert_send: Sender<Message<String>>, _msg: String) -> String {
+    "".to_string()
+}
+
+fn transaction(_alert_send: Sender<Message<String>>, _msg: String) -> String {
+    "".to_string()
+}
+
+fn help() -> String {
+    let mut output = String::new();
+    output.push_str("Commands:\n");
+    output.push_str("/block_height - Be alerted a given block height has been reached. ex: `/block_height 61774`\n");
+    output.push_str("/fees - Be alerted when mempool fees have reached a given level for a transaction to be confirmed in a half-hour. ex: `/fees 2.0`\n");
+    output.push_str("/transaction - Be alerted when a transaction has reached a certain number of confirmations. ex: (be notified with this transaction has been confirmed 3 times) `/transaction 91b8def136d9b261dd23082dad6424f1d3e324107ab096eda5648b3cd269e0bc 3`\n");
+    output.push_str("/help - Help");
+    output
+}
+
 #[instrument(skip_all)]
 pub async fn build_nostr_message(alert: Alert) -> Result<NostrAlertMessage, NostrError> {
+    //TODO: build translation of alert to message
     Ok(NostrAlertMessage {
         client_pk: alert.requestor_pk,
         val: "".to_string(),

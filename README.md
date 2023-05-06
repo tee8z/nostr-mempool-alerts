@@ -20,4 +20,4 @@ Plan to have a public one people can use
 
 ### How to run
 - `cargo install bunyan`
-- `cargo run -q | bunyan`
+- `cargo run -q | bunyan` 

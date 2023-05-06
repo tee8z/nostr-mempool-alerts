@@ -54,6 +54,7 @@ impl Bot {
         tasks.push(mempool_manager_task);
         let nostr_manager_task = tokio::spawn(async { self.nostr_manager.await });
         tasks.push(nostr_manager_task);
+
         let alert_manager_task = tokio::spawn(async { self.alert_manager.await });
         tasks.push(alert_manager_task);
         let all_tasks = join_all(tasks);
