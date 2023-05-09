@@ -3,7 +3,7 @@ use crate::{
     bot::{Channels, Message},
     mempool::MempoolData,
 };
-use anyhow::{Context as AnyhowContext, Result};
+use anyhow::Result;
 use futures_util::Future;
 use sqlx::PgPool;
 use std::{
@@ -139,7 +139,9 @@ async fn process_block_data(
     tokio::spawn(async move {
         let active_alerts = get_active_alerts(db.clone())
             .await
-            .context("error getting active alerts")
+            .map_err(|err| {
+                tracing::error!("error when getting active alerts: {}", err);
+            })
             .unwrap();
 
         let alerts_to_update = active_alerts
@@ -147,11 +149,16 @@ async fn process_block_data(
             .filter_map(|alert| handle_alert(alert.clone(), new_block.clone()))
             .collect::<Vec<Alert>>();
 
-        alerts_to_update
+        match alerts_to_update
             .iter()
             .filter(|alert| alert.should_send)
             .try_for_each(|alert| send_alert_to_nostr(alert, nostr_com.clone()))
-            .unwrap();
+        {
+            Ok(_) => {
+                tracing::info!("completed checking & sending any needed data to nostr manager from alert manager")
+            }
+            Err(e) => tracing::error!("error sending alert data to nostr manager: {:?}", e),
+        }
     });
 
     Ok(())
@@ -164,8 +171,7 @@ fn send_alert_to_nostr(alert: &Alert, nostr_com: Channels<String>) -> Result<(),
     nostr_com
         .send
         .send(Message::from(alert_string))
-        .map_err(anyhow::Error::new)?;
-    Ok(())
+        .map_err(anyhow::Error::new)
 }
 
 #[instrument]

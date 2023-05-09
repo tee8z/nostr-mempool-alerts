@@ -5,6 +5,7 @@ mempool:
 database:
   require_ssl: false
 nostr:
-  private_key: "nsec1rlpycvsa8xuyuqumsdgcssengqc65j87fnmwpffkv7a2tgj3gc0sltukmh"
+  private_key: "nsec1m4ca60u9sdeesn8uhghfgedz8plva68yavnr4g4s7x0tl372tavqsecwtq"
+  #public_key: "npub13mc3253t0qgywsvkxw6fdlypts4ewt4f0cukam07xq50s4z4j59qd23t2y"
   nostr_relays:
    - "ws://0.0.0.0:8080"
